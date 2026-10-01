@@ -65,10 +65,10 @@ class InProcessHost:
         self,
         fixtures: dict[str, Any],
         abi_sha256: str,
-        _artifacts_dir: str,
-        _trust: dict[str, Any],
+        artifacts_dir: str,
+        trust: dict[str, Any],
     ) -> dict[str, Any]:
-        self._host = ReferenceHost(fixtures, abi_sha256)
+        self._host = ReferenceHost(fixtures, abi_sha256, trust, artifacts_dir)
         return self._host.identity()
 
     def run(self, case: dict[str, Any]) -> dict[str, Any]:
@@ -160,6 +160,11 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
                 problems.append(
                     f"encoded mismatch: {actual.get('encoded')!r} "
                     f"!= {expected.get('encoded')!r}"
+                )
+            if "appointment" in expected and actual.get("appointment") != expected.get("appointment"):
+                problems.append(
+                    f"appointment mismatch: {actual.get('appointment')!r} "
+                    f"!= {expected.get('appointment')!r}"
                 )
     elif not actual_error or actual_error.get("kind") != expected_error.get("kind"):
         problems.append(f"expected error kind {expected_error.get('kind')!r}, got {actual_error!r}")

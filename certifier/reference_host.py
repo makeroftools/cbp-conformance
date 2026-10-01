@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import pathlib
 import struct
 import sys
 from typing import Any
@@ -328,13 +329,117 @@ def matches_type(value: Any, type_name: str) -> bool:
     return type_name == "any" or coarse_type(value) == type_name
 
 
+# --------------------------------------------------------------------------
+# Ed25519 (RFC 8032) verification — the appointed trust primitive
+#
+# A compact, pure-stdlib **verifier** used by the reference host. It is a test
+# double (not constant-time); a production host uses a hardened crypto library.
+# It is validated against the RFC 8032 test vectors and the committed artifact
+# signature. A detached signature is verified over the exact artifact bytes.
+# --------------------------------------------------------------------------
+
+_ED_P = 2**255 - 19
+_ED_L = 2**252 + 27742317777372353535851937790883648493
+
+
+def _ed_inv(x: int) -> int:
+    return pow(x, _ED_P - 2, _ED_P)
+
+
+_ED_D = (-121665 * _ed_inv(121666)) % _ED_P
+_ED_I = pow(2, (_ED_P - 1) // 4, _ED_P)
+
+
+def _ed_recover_x(y: int, sign: int) -> int | None:
+    if y >= _ED_P:
+        return None
+    x2 = (y * y - 1) * _ed_inv(_ED_D * y * y + 1) % _ED_P
+    x = pow(x2, (_ED_P + 3) // 8, _ED_P)
+    if (x * x - x2) % _ED_P != 0:
+        x = x * _ED_I % _ED_P
+    if (x * x - x2) % _ED_P != 0:
+        return None
+    if (x & 1) != sign:
+        x = _ED_P - x
+    if x == 0 and sign == 1:
+        return None
+    return x
+
+
+def _ed_decode_point(s: bytes) -> tuple[int, int] | None:
+    if len(s) != 32:
+        return None
+    value = int.from_bytes(s, "little")
+    sign = value >> 255
+    y = value & ((1 << 255) - 1)
+    x = _ed_recover_x(y, sign)
+    return None if x is None else (x, y)
+
+
+def _ed_add(p1: tuple[int, int], p2: tuple[int, int]) -> tuple[int, int]:
+    x1, y1 = p1
+    x2, y2 = p2
+    k = _ED_D * x1 * x2 * y1 * y2 % _ED_P
+    x3 = (x1 * y2 + x2 * y1) * _ed_inv(1 + k) % _ED_P
+    y3 = (y1 * y2 + x1 * x2) * _ed_inv(1 - k) % _ED_P
+    return (x3, y3)
+
+
+def _ed_scalarmult(p: tuple[int, int], e: int) -> tuple[int, int]:
+    q = (0, 1)
+    while e > 0:
+        if e & 1:
+            q = _ed_add(q, p)
+        p = _ed_add(p, p)
+        e >>= 1
+    return q
+
+
+_ED_B = (_ed_recover_x(4 * _ed_inv(5) % _ED_P, 0), 4 * _ed_inv(5) % _ED_P)
+
+
+def ed25519_verify(public: bytes, signature: bytes, message: bytes) -> bool:
+    """True iff the detached Ed25519 ``signature`` verifies over ``message``."""
+    if len(public) != 32 or len(signature) != 64:
+        return False
+    a = _ed_decode_point(public)
+    r = _ed_decode_point(signature[:32])
+    if a is None or r is None:
+        return False
+    s = int.from_bytes(signature[32:], "little")
+    if s >= _ED_L:
+        return False
+    h = int.from_bytes(
+        hashlib.sha512(signature[:32] + public + message).digest(), "little"
+    ) % _ED_L
+    return _ed_scalarmult(_ED_B, s) == _ed_add(r, _ed_scalarmult(a, h))
+
+
+
 class ReferenceHost:
     """Implements the fixtures and the ABI lifecycle/transport rules."""
 
-    def __init__(self, fixtures: dict[str, Any], abi_sha256: str = "") -> None:
+    def __init__(
+        self,
+        fixtures: dict[str, Any],
+        abi_sha256: str = "",
+        trust: dict[str, Any] | None = None,
+        artifacts_dir: str | None = None,
+    ) -> None:
         self._fixtures = fixtures["fixtures"]
         self._networks = fixtures.get("networks", {})
         self._planners = fixtures.get("planners", {})
+        sources = (trust or {}).get("sources", {})
+        self._sources = (
+            {
+                name: key
+                for name, key in sources.items()
+                if isinstance(name, str) and isinstance(key, str)
+            }
+            if isinstance(sources, dict)
+            else {}
+        )
+        self._artifacts_dir = artifacts_dir
         self._contract = {
             "package-name": "cbp:component",
             "version": "1.0.0",
@@ -348,6 +453,8 @@ class ReferenceHost:
         """Drive one case and return its normalized observation."""
         if case.get("category") == "network":
             return self._run_network_case(case)
+        if case.get("category") == "appointed":
+            return self._run_appointed_case(case)
         fixture = self._fixtures.get(case["fixture"])
         if fixture is None:
             return self._result(
@@ -355,6 +462,20 @@ class ReferenceHost:
                 ConformanceError("malformed-module", f"unknown fixture {case['fixture']!r}"),
             )
         scenario = case.get("scenario", {})
+        entered, announcements, packets_out, encoded, error = self._run_lifecycle(
+            fixture, scenario
+        )
+        return self._result(entered, announcements, packets_out, encoded, error)
+
+    def _run_lifecycle(
+        self, fixture: dict[str, Any], scenario: dict[str, Any]
+    ) -> tuple[
+        list[str],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        ConformanceError | None,
+    ]:
         entered: list[str] = []
         announcements: list[dict[str, Any]] = []
         packets_out: list[dict[str, Any]] = []
@@ -393,7 +514,7 @@ class ReferenceHost:
                 error = ConformanceError("malformed-module", f"unknown entrypoint {entrypoint!r}")
                 break
 
-        return self._result(entered, announcements, packets_out, encoded, error)
+        return entered, announcements, packets_out, encoded, error
 
     # -- internals ----------------------------------------------------------
 
@@ -417,6 +538,115 @@ class ReferenceHost:
             "encoded": encoded,
             "error": None if error is None else {"kind": error.kind},
         }
+
+    # -- appointed.v1 (Layer 4: allowlisted, contained appointment) --------
+
+    def _appointed_result(
+        self,
+        appointment: dict[str, Any] | None,
+        lifecycle: list[str],
+        announcements: list[dict[str, Any]],
+        packets_out: list[dict[str, Any]],
+        encoded: list[dict[str, Any]],
+        error: ConformanceError | None,
+    ) -> dict[str, Any]:
+        result = self._result(lifecycle, announcements, packets_out, encoded, error)
+        result["appointment"] = appointment
+        return result
+
+    def _admit_appointed(self, fixture: dict[str, Any]) -> dict[str, Any]:
+        source = fixture.get("source")
+        license_name = fixture.get("license")
+        if (
+            not isinstance(source, str)
+            or not source
+            or not isinstance(license_name, str)
+            or not license_name
+        ):
+            raise ConformanceError(
+                "malformed-module", "appointed fixture needs source and license"
+            )
+        if source not in self._sources:
+            raise ConformanceError(
+                "unknown-source", f"source {source!r} is not allowlisted"
+            )
+        artifact = fixture.get("artifact")
+        if not isinstance(artifact, dict):
+            raise ConformanceError(
+                "malformed-module", "appointed fixture needs an artifact"
+            )
+        file_name = artifact.get("file")
+        expected = artifact.get("sha256")
+        signature = artifact.get("signature")
+        if (
+            not isinstance(file_name, str)
+            or not isinstance(expected, str)
+            or not isinstance(signature, str)
+        ):
+            raise ConformanceError(
+                "malformed-module", "artifact needs file/sha256/signature"
+            )
+        if self._artifacts_dir is None:
+            raise ConformanceError("failed", "no artifacts_dir configured")
+        try:
+            data = (pathlib.Path(self._artifacts_dir) / file_name).read_bytes()
+        except OSError as exc:
+            raise ConformanceError("failed", f"read artifact: {exc}") from exc
+        actual = hashlib.sha256(data).hexdigest()
+        if actual != expected:
+            raise ConformanceError(
+                "content-mismatch", "artifact bytes do not match the declared sha256"
+            )
+        if not signature:
+            raise ConformanceError("unsigned-artifact", "appointed artifact is unsigned")
+        key = self._sources[source]
+        try:
+            verified = ed25519_verify(
+                bytes.fromhex(key), bytes.fromhex(signature), data
+            )
+        except ValueError as exc:
+            raise ConformanceError("bad-signature", f"malformed signature: {exc}") from exc
+        if not verified:
+            raise ConformanceError(
+                "bad-signature", "signature does not verify against the source key"
+            )
+        if fixture.get("grant", {}).get("capabilities", []):
+            raise ConformanceError(
+                "capability-refused",
+                "appointed components must declare zero capabilities (A0)",
+            )
+        return {
+            "property": "contained",
+            "tier": "A0",
+            "source": source,
+            "license": license_name,
+            "artifact_sha256": actual,
+        }
+
+    def _run_appointed_case(self, case: dict[str, Any]) -> dict[str, Any]:
+        fixture = self._fixtures.get(case.get("fixture", ""))
+        if fixture is None:
+            return self._appointed_result(
+                None,
+                [],
+                [],
+                [],
+                [],
+                ConformanceError(
+                    "malformed-module", f"unknown fixture {case.get('fixture')!r}"
+                ),
+            )
+        scenario = case.get("scenario", {})
+        try:
+            appointment = self._admit_appointed(fixture)
+        except ConformanceError as exc:
+            return self._appointed_result(None, [], [], [], [], exc)
+        entered, announcements, packets_out, encoded, error = self._run_lifecycle(
+            fixture, scenario
+        )
+        return self._appointed_result(
+            appointment, entered, announcements, packets_out, encoded, error
+        )
 
     def _run(
         self, fixture: dict[str, Any], scenario: dict[str, Any]
@@ -852,7 +1082,12 @@ def main(argv: list[str] | None = None) -> int:
             continue
         op = message.get("op")
         if op == "configure":
-            host = ReferenceHost(message["fixtures"], message.get("abi_sha256", ""))
+            host = ReferenceHost(
+                message["fixtures"],
+                message.get("abi_sha256", ""),
+                message.get("trust"),
+                message.get("artifacts_dir"),
+            )
             _emit({"protocol": PROTOCOL, "op": op, "ok": True, "runtime": host.identity()})
         elif op == "run":
             if host is None:
