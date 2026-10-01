@@ -62,7 +62,11 @@ class InProcessHost:
         self._host: ReferenceHost | None = None
 
     def configure(
-        self, fixtures: dict[str, Any], abi_sha256: str, _artifacts_dir: str
+        self,
+        fixtures: dict[str, Any],
+        abi_sha256: str,
+        _artifacts_dir: str,
+        _trust: dict[str, Any],
     ) -> dict[str, Any]:
         self._host = ReferenceHost(fixtures, abi_sha256)
         return self._host.identity()
@@ -100,7 +104,11 @@ class SubprocessHost:
         return response
 
     def configure(
-        self, fixtures: dict[str, Any], abi_sha256: str, artifacts_dir: str
+        self,
+        fixtures: dict[str, Any],
+        abi_sha256: str,
+        artifacts_dir: str,
+        trust: dict[str, Any],
     ) -> dict[str, Any]:
         response = self._exchange(
             {
@@ -109,6 +117,7 @@ class SubprocessHost:
                 "fixtures": fixtures,
                 "abi_sha256": abi_sha256,
                 "artifacts_dir": artifacts_dir,
+                "trust": trust,
             }
         )
         if not response.get("ok"):
@@ -206,10 +215,11 @@ def certify(args: argparse.Namespace) -> int:
         return REFUSED
 
     contract_sha = json.loads(pathlib.Path(args.contract_lock).read_text())["source_sha256"]
+    trust = json.loads(pathlib.Path(args.lock).read_text()).get("trust", {})
     host: InProcessHost | SubprocessHost = (
         SubprocessHost(args.host_cmd) if args.host_cmd else InProcessHost()
     )
-    runtime = host.configure(fixtures, contract_sha, args.artifacts_dir)
+    runtime = host.configure(fixtures, contract_sha, args.artifacts_dir, trust)
 
     failures: list[dict[str, Any]] = []
     total = passed = 0

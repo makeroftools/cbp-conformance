@@ -51,7 +51,9 @@ contract drifted (refused before running).
 adding the data-plane `transport.send-on` / `receive-on`) and the v1 vectors are
 frozen and content-addressed. The certifier runs the shared suite **31/31** on the
 Python reference host (in-process and over the protocol) and on the Rust host
-(`pro/cbp-host`), and the **WASM execution suite 8/8** — including a real
+(`pro/cbp-host`), and the **WASM execution suite 10/10** — including a real
 `component-abi.v1` WASM guest that announces channels/tasks and exchanges
-Information Packets over the transport. **Next:** artifact signing/provenance
-(Ed25519/minisign) on top of content addressing.
+Information Packets over the transport. Artifacts are **signed**: a detached
+**Ed25519** signature must verify against the host trust root in
+`wasm.lock.v1.json` before anything executes (unsigned/bad-signature refused).
+**Next:** Layer 2 (content-addressed network execution).

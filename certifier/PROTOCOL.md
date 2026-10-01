@@ -13,7 +13,8 @@ extra logging goes to the host's **stderr**, never stdout.
 ## Handshake
 
 ```
-→ {"protocol":"cbp.conformance-host.v1","op":"configure","fixtures":{...},"abi_sha256":"<hex>"}
+→ {"protocol":"cbp.conformance-host.v1","op":"configure","fixtures":{...},
+   "abi_sha256":"<hex>","artifacts_dir":"...","trust":{...}}
 ← {"protocol":"cbp.conformance-host.v1","op":"configure","ok":true,
    "runtime":{"name":"...","version":"...","sha256":"<hex>"}}
 ```
@@ -21,6 +22,11 @@ extra logging goes to the host's **stderr**, never stdout.
 - `fixtures` is the parsed [`fixtures.v1.json`](../vectors/fixtures.v1.json).
 - `abi_sha256` is the frozen contract hash (`contracts/ABI.lock.v1.json`), so the
   host binds the same contract the vectors were built against.
+- `artifacts_dir` is where WASM fixture artifacts live.
+- `trust` is the **host trust root** (from `vectors/wasm.lock.v1.json`), not
+  fixture data: e.g. `{"ed25519":"<hex>"}`. A WASM artifact must carry a detached
+  signature over its exact bytes verifiable by this key, or the host refuses it
+  before anything executes (`failed`).
 - `runtime` is the **pinned identity** of the host/runtime: name, version, and
   the content hash of the runtime artifact. It is recorded in the certification
   record (SPEC-0013: the runtime is part of the trusted computing base).
