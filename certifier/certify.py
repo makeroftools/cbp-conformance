@@ -61,7 +61,9 @@ class InProcessHost:
     def __init__(self) -> None:
         self._host: ReferenceHost | None = None
 
-    def configure(self, fixtures: dict[str, Any], abi_sha256: str) -> dict[str, Any]:
+    def configure(
+        self, fixtures: dict[str, Any], abi_sha256: str, _artifacts_dir: str
+    ) -> dict[str, Any]:
         self._host = ReferenceHost(fixtures, abi_sha256)
         return self._host.identity()
 
@@ -97,9 +99,17 @@ class SubprocessHost:
             raise SystemExit(f"host protocol mismatch: {response!r}")
         return response
 
-    def configure(self, fixtures: dict[str, Any], abi_sha256: str) -> dict[str, Any]:
+    def configure(
+        self, fixtures: dict[str, Any], abi_sha256: str, artifacts_dir: str
+    ) -> dict[str, Any]:
         response = self._exchange(
-            {"protocol": PROTOCOL, "op": "configure", "fixtures": fixtures, "abi_sha256": abi_sha256}
+            {
+                "protocol": PROTOCOL,
+                "op": "configure",
+                "fixtures": fixtures,
+                "abi_sha256": abi_sha256,
+                "artifacts_dir": artifacts_dir,
+            }
         )
         if not response.get("ok"):
             raise SystemExit(f"host configure failed: {response!r}")
@@ -199,7 +209,7 @@ def certify(args: argparse.Namespace) -> int:
     host: InProcessHost | SubprocessHost = (
         SubprocessHost(args.host_cmd) if args.host_cmd else InProcessHost()
     )
-    runtime = host.configure(fixtures, contract_sha)
+    runtime = host.configure(fixtures, contract_sha, args.artifacts_dir)
 
     failures: list[dict[str, Any]] = []
     total = passed = 0
@@ -257,6 +267,11 @@ def main(argv: list[str] | None = None) -> int:
         help="External host command (JSON-lines protocol); omit for the in-process reference host.",
     )
     parser.add_argument("--out", default=None, help="Write the certification record here.")
+    parser.add_argument(
+        "--artifacts-dir",
+        default="artifacts",
+        help="Directory of WASM fixture artifacts (for wasm-backed fixtures).",
+    )
     return certify(parser.parse_args(argv))
 
 
