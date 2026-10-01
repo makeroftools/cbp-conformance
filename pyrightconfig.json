@@ -1,0 +1,9 @@
+{
+  "include": ["certifier"],
+  "exclude": ["**/__pycache__", "vectors", "artifacts"],
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "standard",
+  "reportMissingImports": "error",
+  "reportMissingTypeStubs": false,
+  "reportImplicitRelativeImport": "none"
+}
