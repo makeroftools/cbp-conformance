@@ -31,6 +31,12 @@ execution suite (**10/10**, run against `artifacts/{identity,abi-identity}.wasm`
 by the Rust host — a full `component-abi.v1` guest, plus detached **Ed25519**
 artifact-signing accept/refuse). The trust root is host configuration carried in
 `wasm.lock.v1.json`, never fixture data. Certify with `certifier/certify.py`;
-`../pro/scripts/certify.sh` runs both suites.
+`../pro/scripts/certify.sh` runs all three suites.
 
-**Next:** Layer 2 (content-addressed network execution).
+**Layer 2 (static) delivered.** `contracts/network-v1.md` freezes `network.v1`: a
+component network pinned (content-addressed) before it runs, every edge
+type-checked at instantiation, and a deterministic replayable trajectory that
+includes the pin. `vectors/network-{fixtures,suite,lock}.v1.json` (9 cases) pass
+on **both** the Python reference host and the Rust host.
+
+**Next:** Layer 2 remainder (generated/deterministic-planner networks).

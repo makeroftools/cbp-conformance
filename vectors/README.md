@@ -9,6 +9,9 @@ single language or runtime is forbidden here.
 | [`fixtures.v1.json`](fixtures.v1.json) | The reference component **fixtures**: declared channels (ports, direction, coarse `port_type`), tasks, behavior, and grant. A host implements each fixture id once. |
 | [`suite.v1.json`](suite.v1.json) | The **cases**: fixture + scenario + expected normalized observation. |
 | [`vectors.lock.v1.json`](vectors.lock.v1.json) | The **content address** of the suite and fixtures, plus the ABI `contract_sha256` they certify. |
+| [`network-fixtures.v1.json`](network-fixtures.v1.json) | The **network fixtures**: the component fixtures a network instantiates plus the pinned `network.v1` documents. |
+| [`network-suite.v1.json`](network-suite.v1.json) | The **network cases**: a pinned network + scenario + expected trajectory/outputs (Layer 2). |
+| [`network.lock.v1.json`](network.lock.v1.json) | The content address of the network suite/fixtures and the `network.v1` contract document. |
 
 ## Categories (SPEC-0013)
 
@@ -26,6 +29,10 @@ single language or runtime is forbidden here.
   under the granted encoding (`json` baseline, pinned canonical `msgpack`),
   cross-encoding equivalence holds, and non-canonical bytes are rejected
   fail-closed (see `contracts/ABI.md` §2a–§2b).
+- **network** — a `network.v1` document is content-addressed (pinned) before it
+  runs; every edge is type-checked at instantiation; execution is a deterministic
+  topological order whose trajectory (including the pin) is replayable (see
+  `contracts/network-v1.md`).
 
 ## Canonical form (content addressing)
 
@@ -79,6 +86,8 @@ endpoints are runtime-specific and must not affect conformance, and only
 - `lifecycle` is compared when present in the expected observation.
 - When the expected `error` is `null`, `announcements`, `packets_out`, and — when
   present — `encoded` are compared exactly (ordered).
+- `network_sha256` and `trajectory` are compared when present in the expected
+  observation (network cases).
 
 Fixtures must be deterministic and runtime-neutral. Certification is defined in
 [`../certifier/`](../certifier/).
