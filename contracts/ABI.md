@@ -68,9 +68,30 @@ A host mediates every send and receive through the imported `transport`
 interface (`send` / `receive`): a WASM or otherwise sandboxed component cannot
 open a socket itself.
 
-### Canonical JSON (`packet-value.json` and `control` bodies)
+### The control plane and the data plane (encodings)
 
-To keep the wire language-neutral and deterministic, JSON bodies are canonical:
+The frame body is split by plane:
+
+- **Control plane** — `announcement` bodies and lifecycle `control` bodies
+  (directive / ack / response): **always canonical JSON**. They are small,
+  stable, and human-auditable; an operator can read a lifecycle trace without a
+  decoder.
+- **Data plane** — `packet` bodies: a `packet-value` (`declared-type` + `data`)
+  rendered under the **one encoding the host grants for the session**
+  (`event-loop.encoding`). Using an un-granted encoding is refused.
+
+`json` is the **mandatory baseline** encoding. `msgpack` is admitted only under
+the pinned canonical profile in §2b; a runtime is trusted with it only after it
+passes the encoding vectors. Equivalence between encodings is **proven by the
+vectors, never assumed** (SPEC-0013): the same typed value must decode
+identically under both, and each must produce its canonical bytes.
+
+If the session encoding for a host is `msgpack`, the *semantic* record is
+unchanged; only the data-plane rendering differs.
+
+### Canonical JSON (the `json` encoding, and all control-plane bodies)
+
+To keep the wire language-neutral and deterministic, JSON is canonical:
 
 - UTF-8, no BOM.
 - Object keys sorted by Unicode code point; no insignificant whitespace
@@ -83,6 +104,33 @@ To keep the wire language-neutral and deterministic, JSON bodies are canonical:
 This is exactly `json.dumps(obj, sort_keys=True, separators=(",", ":"))` in the
 reference control plane, and mirrors its hand-off type vocabulary
 (`str`/`int`/`float`/`bool`/`dict`/`list`/`null`/`any`).
+
+### Canonical MessagePack (the `msgpack` encoding) — pinned profile
+
+MessagePack has **no standardized canonical form**. To use it without
+reintroducing nondeterminism, `component-abi.v1` pins this profile; a runtime
+that emits any other form is non-conformant:
+
+- **Integers** — signed 64-bit only, in the **shortest** form. Positive fixint
+  `0x00`–`0x7f`; negative fixint `0xe0`–`0xff`; otherwise minimal
+  `int8`/`int16`/`int32`/`int64` (negative) or `uint8`/`uint16`/`uint32`/`uint64`
+  (non-negative). An integer MUST NOT be encoded as a float.
+- **Floats** — **float64 (`0xcb`) only**, finite. NaN and infinity are forbidden;
+  float32 (`0xca`) is not permitted (it would silently lose precision).
+- **Strings** — UTF-8; fixstr for length ≤ 31, else minimal `str8`/`str16`/`str32`.
+- **Binary** — minimal `bin8`/`bin16`/`bin32`.
+- **Arrays** — fixarray for length ≤ 15, else minimal `array16`/`array32`.
+- **Maps** — string keys only, **sorted ascending by UTF-8 byte order**;
+  duplicate keys forbidden; fixmap for length ≤ 15, else minimal `map16`/`map32`.
+- **Nil / booleans** — `0xc0` / `0xc2` / `0xc3`.
+- No ext, timestamp, or reserved types; **no trailing bytes**; nesting depth
+  bounded (32). A decoder MUST reject any non-canonical or non-conformant input
+  as `encoding-violation` (fail-closed).
+
+`json` remains the mandatory baseline. MessagePack is a **performance** rendering
+of the *same* typed value; it never changes semantics. CBOR with RFC 8949 §4.2
+deterministic encoding is the preferred *standardized* binary encoding and may be
+added additively in a future revision.
 
 ## 3. Initial hard-coded channels (normative)
 
@@ -161,6 +209,8 @@ A host rejects a module, fail-closed, when any of these holds:
 - it announces off the initial channels, announces a channel/task after `ready`,
   or emits a packet before `ready` — `announcement-violation`;
 - a packet violates its declared `port-type` — `type-violation`;
+- a packet's bytes are not in the granted encoding's canonical form —
+  `encoding-violation`;
 - it uses a capability or exceeds the envelope it was not granted —
   `capability-denied` / `failed`.
 

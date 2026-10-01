@@ -29,17 +29,29 @@ interface types {
     any,
   }
 
-  /// A packet value: a declared coarse type plus its value as canonical JSON.
+  /// The wire encoding of a data-plane packet (`packet-value.data`). The host
+  /// grants exactly one session encoding (see `event-loop`); a component that
+  /// uses an un-granted encoding is refused. `json` is the mandatory baseline
+  /// and is always canonical (see `ABI.md` §2a). `msgpack` is the pinned
+  /// canonical MessagePack profile (`ABI.md` §2b). Control-plane bodies
+  /// (announcements, lifecycle directives/acks/responses) are always canonical
+  /// JSON, regardless of this encoding.
+  enum encoding {
+    json,
+    msgpack,
+  }
+
+  /// A data-plane packet: a declared coarse type plus its value rendered under
+  /// the session `encoding`.
   ///
-  /// The Component Model forbids recursive value types, and an arbitrary depth
-  /// limit would be an unprincipled contract. The ABI therefore freezes a
-  /// canonical JSON encoding instead (see `ABI.md`): UTF-8, keys sorted, no
-  /// insignificant whitespace, `integer` is a signed 64-bit value, `number` is
-  /// IEEE-754 binary64, and NaN / infinity are forbidden. This mirrors the
-  /// reference type vocabulary exactly and keeps the wire language-neutral.
+  /// The Component Model forbids recursive value types, so the value is carried
+  /// as encoded bytes rather than a structural union. Under `json` the bytes are
+  /// canonical JSON; under `msgpack` they are the pinned canonical MessagePack
+  /// profile. Both renderings denote the same typed value, and their equivalence
+  /// is proven by the conformance vectors, never assumed.
   record packet-value {
     declared-type: type-name,
-    json: string,
+    data: list<u8>,
   }
 
   /// ABI-level failure. Fail-closed: every failure is explicit and audited;
@@ -51,6 +63,8 @@ interface types {
     announcement-violation(string),
     /// A value violated its declared port type.
     type-violation(string),
+    /// A packet's bytes were not in the granted encoding's canonical form.
+    encoding-violation(string),
     /// A requested capability was not granted (least privilege, fail-closed).
     capability-denied(string),
     /// Any other explicit, contained failure.
@@ -213,6 +227,8 @@ interface types {
     control-endpoint: string,
     /// Endpoint of the initial hard-coded data channel (Information Packets).
     data-endpoint: string,
+    /// The single encoding the host grants for the data plane this session.
+    encoding: encoding,
   }
 }
 

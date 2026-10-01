@@ -1,10 +1,1 @@
-{
-  "schema": "cbp.contract-lock.v1",
-  "abi": "component-abi.v1",
-  "package": "cbp:component@1.0.0",
-  "source": "component-abi-v1.wit",
-  "source_sha256": "ee7246bfa73d53643e7bea91d0ed424e3095bb235068982848e04cf24754eb0e",
-  "resolved_sha256": "f6258fa2961a011ca9217e5ccd8afe0a1019140d0f31b92ecfe4305a972801d1",
-  "resolver": {"name": "wasm-tools", "version": "1.260.0", "command": "wasm-tools component wit component-abi-v1.wit"},
-  "note": "source_sha256 is the abstract component identity anchor (interface-ref.contract-hash). resolved_sha256 is the semantics-only check via the pinned resolver; comments/whitespace do not change it."
-}
+{"abi":"component-abi.v1","encodings":["json","msgpack"],"note":"source_sha256 is the abstract component identity anchor (interface-ref.contract-hash). resolved_sha256 is the semantics-only check via the pinned resolver. Revision 2 adds the control/data plane split and the encoding negotiation (data plane json|msgpack); json remains the mandatory baseline.","package":"cbp:component@1.0.0","resolved_sha256":"bc91fbd74b276038bc3627152b946778543538f6819e231a6cff2542500661a3","resolver":{"command":"wasm-tools component wit component-abi-v1.wit","name":"wasm-tools","version":"1.260.0"},"revision":2,"schema":"cbp.contract-lock.v1","source":"component-abi-v1.wit","source_sha256":"dc14bc473a02e0a150d1c8ad4d4706cead796a5f69bc94dbfe7b58a266c9ea6e"}
