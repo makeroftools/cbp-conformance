@@ -7,9 +7,11 @@ the declared `sha256` in the fixture descriptor (fail-closed), then executes it.
 
 | artifact | sha256 | what |
 | --- | --- | --- |
-| `identity.wasm` | see the fixture descriptor / `wasm.lock.v1.json` | A WASM component exporting `init`/`run`/`kill` over the `cbp:fixture` task world; `run` echoes its canonical-JSON input. |
+| `identity.wasm` | see the fixture descriptor / `wasm.lock.v1.json` | A WASM component exporting `init`/`run`/`kill` over the narrow `cbp:fixture` task world; `run` echoes its canonical-JSON input (Layer 1b substrate). |
+| `abi-identity.wasm` | see the fixture descriptor / `wasm.lock.v1.json` | A full **`component-abi.v1`** WASM guest (Layer 1c): it exports the ABI world, announces its channels/task over the control channel, and exchanges Information Packets on its data channels via the host-mediated `transport`. |
 
-Source: [`pro/fixtures/identity/`](https://github.com/makeroftools/cbp-pro)
-(Rust; built with the pinned `cargo-component`). The component ABI
-(`component-abi.v1`) remains the runtime contract; this is a *fixture* world that
-proves signed WASM execution.
+Source: [`pro/fixtures/`](https://github.com/makeroftools/cbp-pro)
+(`identity/`, `abi-identity/`; Rust, built with the pinned `cargo-component`
+against `../contracts/component-abi-v1.wit`). The component ABI
+(`component-abi.v1`) is the runtime contract for `abi-identity.wasm`; the
+`identity.wasm` fixture world proves the content-addressed execution substrate.
