@@ -56,4 +56,7 @@ Python reference host (in-process and over the protocol) and on the Rust host
 Information Packets over the transport. Artifacts are **signed**: a detached
 **Ed25519** signature must verify against the host trust root in
 `wasm.lock.v1.json` before anything executes (unsigned/bad-signature refused).
-**Next:** Layer 2 (content-addressed network execution).
+The **`network.v1` suite 14/14** (revision 2) certifies pinned, typed, replayable
+network execution — static and deterministic-planner — on both the Python
+reference host and the Rust host.
+**Next:** Layer 4 (appointed components; static-only fallback).

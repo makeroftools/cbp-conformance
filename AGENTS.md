@@ -41,4 +41,4 @@ re-runs its deterministic planner and must reproduce the pin (`plan-mismatch`
 otherwise). `vectors/network-{fixtures,suite,lock}.v1.json` (**14 cases**) pass on
 **both** the Python reference host and the Rust host.
 
-**Next:** Layer 3 (read-only web diagram from the pinned network document).
+**Next:** Layer 4 (appointed components; static-only fallback), plus additional vectors as the ABI/network evolve.
