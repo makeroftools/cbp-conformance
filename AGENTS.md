@@ -19,7 +19,12 @@ See `README.md`; the architecture is frozen in `../core/specs/SPEC-0012` and
 - Nothing here may encode an implementation detail of any single language or
   runtime.
 
-## Next
+## Status / Next
 
-Layer 0: write `contracts/*.wit` (the ABI) and the first `vectors/` fixtures;
-stub `certifier/` to run them against a host.
+**Layer 0 delivered** (frozen `component-abi.v1` in `contracts/`, the v1 vectors
+in `vectors/`, and the `certifier/` that runs them — 17/17 on the reference
+host). Validate the WIT with the pinned `wasm-tools` recorded in
+`contracts/ABI.lock.v1.json`; certify with `python3 certifier/certify.py`.
+
+**Layer 1:** a Rust host + signed WASM components over this ABI, certified by
+these same vectors (see `../pro/`). Then the Python reflection host, same ABI.
