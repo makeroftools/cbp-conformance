@@ -47,7 +47,11 @@ contract drifted (refused before running).
 
 ## Status
 
-**Layer 0 delivered:** the `component-abi.v1` contract and the v1 vectors are
-frozen and content-addressed; the certifier runs them (17/17 on the reference
-host). **Next (Layer 1):** a Rust host that loads signed WASM components over the
-ABI and passes these same vectors — hence `pro/`.
+**Layers 0/1a/1b/1c delivered:** the `component-abi.v1` contract (revision 3,
+adding the data-plane `transport.send-on` / `receive-on`) and the v1 vectors are
+frozen and content-addressed. The certifier runs the shared suite **31/31** on the
+Python reference host (in-process and over the protocol) and on the Rust host
+(`pro/cbp-host`), and the **WASM execution suite 8/8** — including a real
+`component-abi.v1` WASM guest that announces channels/tasks and exchanges
+Information Packets over the transport. **Next:** artifact signing/provenance
+(Ed25519/minisign) on top of content addressing.

@@ -16,4 +16,6 @@ wasm-tools component wit component-abi-v1.wit      # pinned: see ABI.lock.v1.jso
 ```
 
 `component-abi.v1` is frozen and additive-only; an incompatible change is
-`component-abi.v2` with a new `contract-hash`.
+`component-abi.v2` with a new `contract-hash`. Revision 3 added the additive
+data-plane transport (`transport.send-on` / `transport.receive-on`), keyed by the
+announced channel endpoint; the control plane (`send` / `receive`) is unchanged.
