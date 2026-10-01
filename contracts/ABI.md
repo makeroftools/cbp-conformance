@@ -65,8 +65,12 @@ A frame is a sequence of ZeroMQ parts:
   structured `packet` (`packet-value`), or canonical JSON (`control`).
 
 A host mediates every send and receive through the imported `transport`
-interface (`send` / `receive`): a WASM or otherwise sandboxed component cannot
-open a socket itself.
+interface: a WASM or otherwise sandboxed component cannot open a socket itself.
+`send` / `receive` are the initial hard-coded **control** channel. The data
+plane is carried by `send-on` / `receive-on`, keyed by the **announced endpoint**
+of a channel (`announcement.channel.endpoint`); Information Packets travel only
+on announced channel endpoints, never the control channel. A send or receive on
+an endpoint that was never announced is `announcement-violation` (fail-closed).
 
 ### The control plane and the data plane (encodings)
 

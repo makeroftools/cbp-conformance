@@ -234,6 +234,13 @@ interface types {
 
 /// The host-provided ZeroMQ event loop. A WASM or sandboxed component cannot
 /// open sockets itself, so the host mediates every send and receive.
+///
+/// `send` / `receive` are the initial hard-coded **control** channel: lifecycle
+/// directives in, announcements out (`ABI.md` §3). The **data plane** travels on
+/// the component's announced channel endpoints via `send-on` / `receive-on`,
+/// keyed by the endpoint the component declared in `announcement.channel`. A
+/// send or receive on an endpoint that was never announced is
+/// `announcement-violation` (fail-closed).
 interface transport {
   use types.{abi-error, envelope-frame};
 
@@ -242,6 +249,14 @@ interface transport {
   /// Receive the next framed message from the initial control channel.
   /// Returns `none` when the loop has been closed by the host.
   receive: func() -> result<option<envelope-frame>, abi-error>;
+
+  /// Send a framed message on an announced data channel, by its declared
+  /// endpoint (`announcement.channel.endpoint`). Information Packets travel on
+  /// the data plane, never the control channel.
+  send-on: func(endpoint: string, frame: envelope-frame) -> result<_, abi-error>;
+  /// Receive the next framed message on an announced data channel, by its
+  /// declared endpoint. Returns `none` when the host has closed the channel.
+  receive-on: func(endpoint: string) -> result<option<envelope-frame>, abi-error>;
 }
 
 /// The host-provided capability gate. Reading a capability the host did not
