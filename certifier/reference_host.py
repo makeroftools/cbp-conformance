@@ -395,7 +395,11 @@ def _ed_scalarmult(p: tuple[int, int], e: int) -> tuple[int, int]:
     return q
 
 
-_ED_B = (_ed_recover_x(4 * _ed_inv(5) % _ED_P, 0), 4 * _ed_inv(5) % _ED_P)
+_ED_BY = 4 * _ed_inv(5) % _ED_P
+_ED_BX = _ed_recover_x(_ED_BY, 0)
+if _ED_BX is None:  # pragma: no cover - the curve base point always recovers
+    raise AssertionError("Ed25519 base point failed to recover")
+_ED_B = (_ED_BX, _ED_BY)
 
 
 def ed25519_verify(public: bytes, signature: bytes, message: bytes) -> bool:
@@ -856,11 +860,12 @@ class ReferenceHost:
                 raise ConformanceError(
                     "malformed-network", "IIP references an undeclared in-port"
                 )
-            if (to, port) in bound:
+            key = (str(to), str(port))
+            if key in bound:
                 raise ConformanceError(
                     "malformed-network", "in-port has more than one IIP"
                 )
-            bound.add((to, port))
+            bound.add(key)
             if not matches_type(iip.get("value"), ch["port_type"]):
                 raise ConformanceError(
                     "type-violation", f"IIP does not match {ch['port_type']!r}"

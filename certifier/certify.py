@@ -23,7 +23,7 @@ import json
 import pathlib
 import subprocess
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 from reference_host import PROTOCOL, ReferenceHost
 
@@ -38,7 +38,7 @@ def canonical_bytes(obj: Any) -> bytes:
     ).encode("utf-8")
 
 
-def _refuse(message: str) -> None:
+def _refuse(message: str) -> NoReturn:
     print(message, file=sys.stderr)
     raise SystemExit(REFUSED)
 
