@@ -16,6 +16,9 @@ run an unpinned or mis-pinned network (fail-closed). This holds for static and
 generated networks alike: a generated network is content-hashed and pinned
 before it runs, so replay may reconstruct byte-identical wiring.
 
+A **live-wired, never-pinned** network is not an admissible trust model for a
+verified result and is rejected.
+
 ## 2. The document
 
 A `network.v1` document is a canonical-JSON object (`ABI.md` §2a):
@@ -36,6 +39,7 @@ A `network.v1` document is a canonical-JSON object (`ABI.md` §2a):
     {"to": "<component id>", "port": "<in channel>",
      "type": "<coarse type>", "value": <value>}
   ],
+  "provenance": {"kind": "static" | "planner", "...": "..."},
   "content_hash": "<lowercase sha256 hex>"
 }
 ```
@@ -48,6 +52,9 @@ A `network.v1` document is a canonical-JSON object (`ABI.md` §2a):
   fixtures.
 - `iips` bind an Initial Information Packet to a target in channel. An in
   channel MAY carry an IIP or an incoming edge, never both (fail-closed).
+- `provenance` is **optional** metadata identifying how the network was
+  produced. Absent means `static` (authored and pinned by hand). A `planner`
+  provenance records the deterministic generator (see §4).
 - `content_hash` is the **pin** (below).
 
 ## 3. The pin (content address)
@@ -58,11 +65,50 @@ separators (`,` `:`), UTF-8, and integers-only numbers (`ABI.md` §2a). The pin 
 independent of key insertion order and of the transport's whitespace, so two
 hosts always compute the same value for the same wiring.
 
+The pin commits to the **whole** document — components, edges, IIPs, and
+provenance — so it is a complete content address of the wiring and of how it was
+produced.
+
 A host MUST reject a document whose `content_hash` is absent or empty
 (`not-pinned`) or does not equal the computed pin (`pin-mismatch`), before any
 component is instantiated.
 
-## 4. Typed enforcement at instantiation
+## 4. Generated networks and deterministic replay
+
+A network may be **generated** just before execution rather than authored. Two
+admissible modes exist (SPEC-0014):
+
+- **Deterministic planner** — a signed planner generates the network from
+  deterministic inputs; the plan is content-addressed. **Replay re-runs the
+  planner and reconstructs byte-identical wiring.**
+- **Autonomy proposes, the pin disposes** — an autonomous (possibly
+  model-mediated) agent proposes the network; the **pinned plan is the trust
+  anchor** and replay uses the frozen plan rather than regenerating it.
+
+A proposed plan is simply a pinned `network.v1` document (§1–§3): the pin
+disposes. The stronger, self-verifying mode is the deterministic planner, which
+a host records as `provenance`:
+
+```json
+"provenance": {"kind": "planner", "planner": "<planner fixture id>", "inputs": <value>}
+```
+
+For a `planner`-provenanced document the host MUST, **before executing**:
+
+1. look up the named planner; an unknown planner is `unknown-planner`;
+2. re-run the planner deterministically on `provenance.inputs` to regenerate the
+   `components` / `edges` / `iips` wiring;
+3. re-assemble the document from the pinned `schema` / `abi` / `id` /
+   `provenance` and the regenerated wiring, canonicalize it, and require its pin
+   to equal the recorded `content_hash`.
+
+If the regenerated wiring does not reproduce the pin, the host refuses
+(`plan-mismatch`). This makes the pin a proof of the planner's deterministic
+output: tampering with the wiring — even with a self-consistent recomputed pin —
+is caught, because replay regenerates the true wiring. A planner's output is
+therefore deterministic **once its inputs are pinned**.
+
+## 5. Typed enforcement at instantiation
 
 Every edge is contract-checked **at instantiation**, static or dynamic, and the
 network fails closed on mismatch:
@@ -78,7 +124,7 @@ network fails closed on mismatch:
 Type compatibility operates on the coarse ABI vocabulary `str | int | float |
 bool | dict | list | null | any`.
 
-## 5. Execution and the trajectory
+## 6. Execution and the trajectory
 
 The network executes its components in a **deterministic topological order**
 (ties broken by ascending component id), so identical wiring always produces the
@@ -101,11 +147,14 @@ A host records a single **trajectory**:
 ```
 
 Steps are ordered by execution; `inputs` and `outputs` are sorted by port for
-determinism. The pin is **part of the recorded trajectory**, so a replay can
-prove it ran the same wiring: replay re-runs the same pinned document and MUST
-reproduce a byte-identical trajectory.
+determinism. For a `planner`-provenanced network the trajectory also carries a
+`"provenance": {"kind": "planner", "planner": "<id>"}` record, so the recorded
+trajectory states how the wiring was produced. The pin is **part of the recorded
+trajectory**, so a replay can prove it ran the same wiring: replay re-runs the
+same pinned document (re-verifying a planner, §4) and MUST reproduce a
+byte-identical trajectory.
 
-## 6. Errors (fail-closed)
+## 7. Errors (fail-closed)
 
 A refusal carries an explicit, contractual `kind`. The network-level kinds are:
 
@@ -113,6 +162,8 @@ A refusal carries an explicit, contractual `kind`. The network-level kinds are:
 | --- | --- |
 | `not-pinned` | `content_hash` absent or empty |
 | `pin-mismatch` | `content_hash` does not equal the computed pin |
+| `unknown-planner` | a `planner` provenance names a planner the host was not configured with |
+| `plan-mismatch` | re-running the planner does not reproduce the pinned wiring |
 | `malformed-network` | structural defect (unknown component/port, duplicate id, cycle, bad IIP/edge pairing) |
 | `unknown-fixture` | a component names a fixture the host was not configured with |
 | `type-mismatch` | an edge's out/in types are incompatible |
@@ -123,7 +174,12 @@ A refusal carries an explicit, contractual `kind`. The network-level kinds are:
 Every failure is explicit and audited; there is no silent or partial success
 (Law 8).
 
-## 7. Conformance
+## 8. Revisions
+
+- **revision 2** — adds the optional `provenance` block and the deterministic
+  planner replay (§4). Additive: a document with no `provenance` is unchanged.
+
+## 9. Conformance
 
 The executable contract is `vectors/network-suite.v1.json` against
 `vectors/network-fixtures.v1.json`, pinned by `vectors/network.lock.v1.json`.

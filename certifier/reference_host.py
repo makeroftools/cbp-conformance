@@ -334,6 +334,7 @@ class ReferenceHost:
     def __init__(self, fixtures: dict[str, Any], abi_sha256: str = "") -> None:
         self._fixtures = fixtures["fixtures"]
         self._networks = fixtures.get("networks", {})
+        self._planners = fixtures.get("planners", {})
         self._contract = {
             "package-name": "cbp:component",
             "version": "1.0.0",
@@ -551,6 +552,10 @@ class ReferenceHost:
                 "pin-mismatch", "content_hash does not match the document"
             )
 
+        provenance = doc.get("provenance")
+        if isinstance(provenance, dict) and provenance.get("kind") == "planner":
+            self._verify_planner(body, provenance, computed)
+
         components = doc.get("components")
         if not isinstance(components, list) or not components:
             raise ConformanceError(
@@ -710,19 +715,83 @@ class ReferenceHost:
             }
             for t in terminal
         ]
+        trajectory: dict[str, Any] = {
+            "network_sha256": computed,
+            "encoding": encoding,
+            "steps": steps,
+        }
+        if isinstance(provenance, dict) and provenance.get("kind") == "planner":
+            trajectory["provenance"] = {
+                "kind": "planner",
+                "planner": provenance.get("planner"),
+            }
         return {
             "network_sha256": computed,
             "lifecycle": ["run"],
             "announcements": [],
             "packets_out": terminal,
             "encoded": encoded,
-            "trajectory": {
-                "network_sha256": computed,
-                "encoding": encoding,
-                "steps": steps,
-            },
+            "trajectory": trajectory,
             "error": None,
         }
+
+    def _verify_planner(
+        self, body: dict[str, Any], provenance: dict[str, Any], expected_pin: str
+    ) -> None:
+        planner_id = provenance.get("planner")
+        planner = self._planners.get(planner_id) if isinstance(planner_id, str) else None
+        if planner is None:
+            raise ConformanceError(
+                "unknown-planner", f"planner {planner_id!r} is not configured"
+            )
+        components, edges, iips = self._run_planner(planner, provenance.get("inputs", {}))
+        regenerated = dict(body)
+        regenerated["components"] = components
+        regenerated["edges"] = edges
+        regenerated["iips"] = iips
+        regen_pin = hashlib.sha256(canonical_json(regenerated)).hexdigest()
+        if regen_pin != expected_pin:
+            raise ConformanceError(
+                "plan-mismatch", "planner replay does not reproduce the pinned wiring"
+            )
+
+    def _run_planner(
+        self, planner: dict[str, Any], inputs: Any
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        behavior = planner.get("behavior")
+        if behavior == "linear-chain":
+            if not isinstance(inputs, dict):
+                raise ConformanceError(
+                    "malformed-network", "planner inputs must be an object"
+                )
+            fixture = inputs.get("fixture")
+            length = inputs.get("length")
+            value = inputs.get("value")
+            if (
+                not isinstance(fixture, str)
+                or not isinstance(length, int)
+                or not (1 <= length <= 26)
+            ):
+                raise ConformanceError(
+                    "malformed-network", "invalid linear-chain planner inputs"
+                )
+            components = [
+                {"id": chr(97 + i), "fixture": fixture} for i in range(length)
+            ]
+            edges = [
+                {
+                    "from": chr(97 + i),
+                    "from_port": "out",
+                    "to": chr(97 + i + 1),
+                    "to_port": "in",
+                }
+                for i in range(length - 1)
+            ]
+            iips = [{"to": "a", "port": "in", "type": "int", "value": value}]
+            return components, edges, iips
+        raise ConformanceError(
+            "malformed-network", f"unknown planner behavior {behavior!r}"
+        )
 
     def _network_order(
         self, by_id: dict[str, Any], edges: list[dict[str, Any]]
