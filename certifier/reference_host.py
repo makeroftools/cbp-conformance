@@ -76,9 +76,24 @@ def validate_value(value: Any, depth: int = 0) -> None:
     raise NotCanonical(f"unsupported value type {type(value).__name__}")
 
 
+def _reject_float(value: Any) -> None:
+    """Canonical JSON carries integers only; floats MUST use a binary encoding."""
+    if isinstance(value, float):
+        raise NotCanonical(
+            "non-integer number in canonical JSON (use a binary encoding for floats)"
+        )
+    if isinstance(value, list):
+        for item in value:
+            _reject_float(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            _reject_float(item)
+
+
 def canonical_json(value: Any) -> bytes:
     """Canonical JSON (see ABI.md §2a): sorted keys, tight separators, UTF-8."""
     validate_value(value)
+    _reject_float(value)
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     ).encode("utf-8")
@@ -477,7 +492,7 @@ class ReferenceHost:
         try:
             data = encode_value(out_value, session_encoding)
         except NotCanonical as exc:
-            raise ConformanceError("failed", f"could not encode output: {exc}") from exc
+            raise ConformanceError("encoding-violation", f"could not encode output: {exc}") from exc
         return (
             announcements,
             [{"port": port, "type": coarse_type(out_value), "value": out_value}],

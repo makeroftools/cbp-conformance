@@ -155,6 +155,7 @@ def verify_locks(
     suite: dict[str, Any],
     suite_sha: str,
     fixtures_sha: str,
+    abi_md_sha: str,
     lock_path: str,
     contract_lock_path: str,
 ) -> list[str]:
@@ -172,13 +173,23 @@ def verify_locks(
         problems.append("suite contract_sha256 does not match contracts/ABI.lock.v1.json")
     if suite.get("fixtures_sha256") != fixtures_sha:
         problems.append("suite fixtures_sha256 does not match the fixtures file")
+    if contract_lock.get("abi_md_sha256") != abi_md_sha:
+        problems.append("ABI.md sha256 does not match contracts/ABI.lock.v1.json")
     return problems
 
 
 def certify(args: argparse.Namespace) -> int:
     suite, suite_sha = load_canonical(args.suite)
     fixtures, fixtures_sha = load_canonical(args.fixtures)
-    problems = verify_locks(suite, suite_sha, fixtures_sha, args.lock, args.contract_lock)
+    abi_md_path = pathlib.Path(args.contract_lock).parent / "ABI.md"
+    abi_md_sha = (
+        hashlib.sha256(abi_md_path.read_bytes()).hexdigest()
+        if abi_md_path.is_file()
+        else ""
+    )
+    problems = verify_locks(
+        suite, suite_sha, fixtures_sha, abi_md_sha, args.lock, args.contract_lock
+    )
     if problems:
         for problem in problems:
             print(f"refusing to run: {problem}", file=sys.stderr)

@@ -96,9 +96,10 @@ To keep the wire language-neutral and deterministic, JSON is canonical:
 - UTF-8, no BOM.
 - Object keys sorted by Unicode code point; no insignificant whitespace
   (separators `,` and `:`).
-- `integer` is a **signed 64-bit** value (no unbounded-precision integers, no
-  fractions or exponents on an integer).
-- `number` is **IEEE-754 binary64**; NaN and infinity are forbidden.
+- Numbers are **integers only** (signed 64-bit). Non-integer IEEE-754 binary64
+  numbers are **not representable** in canonical JSON: a float value MUST be
+  carried under a binary encoding (`msgpack`, float64). NaN and infinity are
+  forbidden in every encoding.
 - `true` / `false` / `null` lowercase; minimal string escaping.
 
 This is exactly `json.dumps(obj, sort_keys=True, separators=(",", ":"))` in the
