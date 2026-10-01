@@ -1,0 +1,10 @@
+{
+  "schema": "cbp.contract-lock.v1",
+  "abi": "component-abi.v1",
+  "package": "cbp:component@1.0.0",
+  "source": "component-abi-v1.wit",
+  "source_sha256": "ee7246bfa73d53643e7bea91d0ed424e3095bb235068982848e04cf24754eb0e",
+  "resolved_sha256": "f6258fa2961a011ca9217e5ccd8afe0a1019140d0f31b92ecfe4305a972801d1",
+  "resolver": {"name": "wasm-tools", "version": "1.260.0", "command": "wasm-tools component wit component-abi-v1.wit"},
+  "note": "source_sha256 is the abstract component identity anchor (interface-ref.contract-hash). resolved_sha256 is the semantics-only check via the pinned resolver; comments/whitespace do not change it."
+}

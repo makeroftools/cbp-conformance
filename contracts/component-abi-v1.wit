@@ -1,0 +1,264 @@
+/// CBP Component ABI v1 — the language- and runtime-agnostic component contract.
+///
+/// A component is a blank, abstract object at rest. It carries a typed
+/// interface contract and a language/runtime requirement, but the concrete task
+/// it invokes is loaded dynamically. It depends only on its language and its
+/// runtime — never on a baked-in implementation.
+///
+/// This package freezes the *typed* surface. The *transport* (a ZeroMQ event
+/// loop), the initial hard-coded channels, the lifecycle ordering, the
+/// pre-init/body split, and the announcement rule cannot be fully expressed in
+/// WIT; they are normative in `contracts/ABI.md`. This file and that document
+/// are one contract, versioned together as `component-abi.v1`.
+package cbp:component@1.0.0;
+
+/// The shared typed surface of the ABI.
+interface types {
+  /// The coarse value vocabulary shared with the reference control plane's
+  /// hand-off type system (`core/src/agent_centric/contracts/handoff.py`).
+  /// `any` is the untyped wildcard. `bool` and `list` are WIT keywords, so
+  /// their case names are written `%bool` / `%list`.
+  enum type-name {
+    str,
+    int,
+    float,
+    %bool,
+    dict,
+    %list,
+    null,
+    any,
+  }
+
+  /// A packet value: a declared coarse type plus its value as canonical JSON.
+  ///
+  /// The Component Model forbids recursive value types, and an arbitrary depth
+  /// limit would be an unprincipled contract. The ABI therefore freezes a
+  /// canonical JSON encoding instead (see `ABI.md`): UTF-8, keys sorted, no
+  /// insignificant whitespace, `integer` is a signed 64-bit value, `number` is
+  /// IEEE-754 binary64, and NaN / infinity are forbidden. This mirrors the
+  /// reference type vocabulary exactly and keeps the wire language-neutral.
+  record packet-value {
+    declared-type: type-name,
+    json: string,
+  }
+
+  /// ABI-level failure. Fail-closed: every failure is explicit and audited;
+  /// there is no silent or partial success.
+  variant abi-error {
+    /// The module is missing, or mis-declares, one of `init` / `run` / `kill`.
+    malformed-module(string),
+    /// A channel or task was announced outside the initial hard-coded channels.
+    announcement-violation(string),
+    /// A value violated its declared port type.
+    type-violation(string),
+    /// A requested capability was not granted (least privilege, fail-closed).
+    capability-denied(string),
+    /// Any other explicit, contained failure.
+    failed(string),
+  }
+
+  /// The identity of an abstract component: the hash of its typed interface
+  /// contract. Language- and runtime-agnostic; this is what a network binds to.
+  record interface-ref {
+    /// The WIT package name, e.g. `cbp:component`.
+    package-name: string,
+    /// The WIT package version, e.g. `1.0.0`.
+    version: string,
+    /// Lowercase sha256 (64-hex) of the canonical typed interface contract.
+    contract-hash: string,
+  }
+
+  /// How a concrete task artifact is sourced. Registry sources are open and
+  /// extensible; `other` carries any future content-addressable locator.
+  variant source-kind {
+    git,
+    directory,
+    binary,
+    other(string),
+  }
+
+  /// Provenance of a concrete task artifact: where it came from and its
+  /// integrity evidence. A source kind never changes identity: the resolved
+  /// artifact is always content-hashed and signed.
+  record provenance {
+    source-kind: source-kind,
+    /// Git repo URL, directory path, binary locator, or other content address.
+    source: string,
+    /// The immutable commit for a git source (40- or 64-hex), else "".
+    commit: string,
+    /// Lowercase sha256 (64-hex) of the resolved artifact.
+    tree-sha256: string,
+    /// Detached signature (verifier-specific encoding), else "".
+    signature: string,
+  }
+
+  /// The identity of a concrete task: its signed content hash plus provenance.
+  record artifact-ref {
+    /// Lowercase sha256 (64-hex) signed content hash of the task artifact.
+    content-hash: string,
+    provenance: provenance,
+  }
+
+  /// Two-level component identity. Ports are never identity.
+  record identity {
+    /// The component's declared name (unique within a network).
+    name: string,
+    /// Abstract identity: the typed contract (language/runtime agnostic).
+    contract: interface-ref,
+    /// Concrete identity: the signed task artifact (provenance-bearing).
+    artifact: artifact-ref,
+  }
+
+  /// Deterministic, host-granted boot entries, recorded for replay.
+  record environment {
+    entries: list<tuple<string, packet-value>>,
+  }
+
+  /// The pre-init boot config, delivered once to `init` before anything else.
+  record boot-config {
+    /// The ABI version this component implements, e.g. `component-abi.v1`.
+    abi-version: string,
+    identity: identity,
+    /// What the host requires the component to implement. MUST equal
+    /// `identity.contract`; a mismatch is refused fail-closed.
+    declared-contract: interface-ref,
+    environment: environment,
+  }
+
+  /// A granted capability (least privilege). A component may use only these.
+  record capability {
+    name: string,
+    version: string,
+  }
+
+  /// The hard resource bounds granted to a component. These are not advisory.
+  record envelope {
+    /// Wall-clock limit in milliseconds; 0 grants no time.
+    timeout-ms: u64,
+    /// Maximum number of packets the component may process; 0 grants none.
+    step-limit: u64,
+    /// Maximum bytes of component-owned state; 0 grants no state.
+    state-bytes: u64,
+  }
+
+  /// What a host grants a component at boot: capabilities plus the envelope.
+  record grant {
+    capabilities: list<capability>,
+    envelope: envelope,
+  }
+
+  enum channel-direction {
+    in,
+    out,
+  }
+
+  /// A named runtime endpoint instantiated from the contract. Ports are dynamic
+  /// endpoints, never identity, and at rest a component has no edges.
+  record channel-announcement {
+    name: string,
+    direction: channel-direction,
+    port-type: type-name,
+    /// The ZeroMQ endpoint the host should bind/connect for this channel.
+    endpoint: string,
+  }
+
+  /// A task the component offers, ported over the announced channels.
+  record task-announcement {
+    name: string,
+    input-ports: list<string>,
+    output-ports: list<string>,
+  }
+
+  /// Everything a component may announce, and only over the initial hard-coded
+  /// channels. `ready` closes the initial announcement set; a component that
+  /// announces after `ready`, or off the initial channels, is refused.
+  variant announcement {
+    channel(channel-announcement),
+    task(task-announcement),
+    ready,
+  }
+
+  enum message-kind {
+    directive,
+    ack,
+    response,
+    announcement,
+    packet,
+  }
+
+  /// The body of a frame. `announcement` and `packet` are structured; a
+  /// directive/ack/response body is canonical JSON (`control`).
+  variant frame-body {
+    announcement(announcement),
+    packet(packet-value),
+    control(string),
+  }
+
+  /// The framed unit that travels over ZeroMQ. A ROUTER prepends the sender's
+  /// routing identity as a separate first frame; the logical frame begins here.
+  record envelope-frame {
+    /// Echoed on every ack/response. Makes async matching deterministic and
+    /// idempotency checkable.
+    correlation-id: string,
+    kind: message-kind,
+    body: frame-body,
+  }
+
+  /// The handles to the initial, hard-coded channels of a component's event
+  /// loop. These two channels exist before any announcement; every channel and
+  /// task is announced over them, never over an ad-hoc channel.
+  record event-loop {
+    /// Endpoint of the initial hard-coded control channel (lifecycle and
+    /// announcements).
+    control-endpoint: string,
+    /// Endpoint of the initial hard-coded data channel (Information Packets).
+    data-endpoint: string,
+  }
+}
+
+/// The host-provided ZeroMQ event loop. A WASM or sandboxed component cannot
+/// open sockets itself, so the host mediates every send and receive.
+interface transport {
+  use types.{abi-error, envelope-frame};
+
+  /// Send a framed message over the initial hard-coded control channel.
+  send: func(frame: envelope-frame) -> result<_, abi-error>;
+  /// Receive the next framed message from the initial control channel.
+  /// Returns `none` when the loop has been closed by the host.
+  receive: func() -> result<option<envelope-frame>, abi-error>;
+}
+
+/// The host-provided capability gate. Reading a capability the host did not
+/// grant fails closed.
+interface capabilities {
+  use types.{capability};
+
+  granted: func() -> list<capability>;
+  within: func(name: string) -> bool;
+}
+
+/// The component ABI v1 world: three exported entrypoints (`init` / `run` /
+/// `kill`), the host event-loop and capability imports, and the shared type
+/// interface. A module that does not match this world is refused.
+world component-abi-v1 {
+  /// The shared typed surface. A type-only interface: importing it declares the
+  /// contract types in the world (the Component Model requires it) and imposes
+  /// no host behavior.
+  import types;
+  /// Host-provided event loop and capability gate.
+  import transport;
+  import capabilities;
+
+  use types.{abi-error, boot-config, event-loop};
+
+  /// Invoked once, before anything else, with the typed pre-init boot config.
+  export init: func(config: boot-config) -> result<_, abi-error>;
+
+  /// The long-lived loop. All body data arrives over the loop, and it receives
+  /// everything except the pre-init already given to `init`. All channels and
+  /// tasks are announced over the initial hard-coded channels.
+  export run: func(loop: event-loop) -> result<_, abi-error>;
+
+  /// Deterministic teardown.
+  export kill: func() -> result<_, abi-error>;
+}

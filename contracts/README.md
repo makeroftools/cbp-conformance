@@ -1,5 +1,19 @@
-# contracts/ — WIT interface definitions
+# contracts/ — the frozen component ABI (WIT)
 
-Holds the frozen component ABI as **WIT** (WASM Component Model) interfaces:
-`init`, `run`, `kill`, the pre-init boot config, and the typed packet/channel
-types. Filled in at Layer 0 (SPEC-0012). Nothing language-specific lives here.
+The frozen ABI is the **language- and runtime-agnostic** component contract
+(SPEC-0012). Nothing language-specific lives here.
+
+| file | what |
+| --- | --- |
+| [`component-abi-v1.wit`](component-abi-v1.wit) | The typed surface: `init` / `run` / `kill`, the pre-init boot config, identity, capabilities, channels/tasks, and the framed transport unit. Validated with the pinned resolver. |
+| [`ABI.md`](ABI.md) | The **normative prose**: lifecycle ordering, the ZeroMQ event loop, the initial hard-coded channels, the announcement rule, identity, registry sources, least privilege, and fail-closed rejection. Read together with the WIT. |
+| [`ABI.lock.v1.json`](ABI.lock.v1.json) | The **content address** of the contract: `source_sha256` (the abstract identity anchor) and `resolved_sha256` (the semantics-only check), plus the pinned resolver. |
+
+## Validate
+
+```sh
+wasm-tools component wit component-abi-v1.wit      # pinned: see ABI.lock.v1.json
+```
+
+`component-abi.v1` is frozen and additive-only; an incompatible change is
+`component-abi.v2` with a new `contract-hash`.
