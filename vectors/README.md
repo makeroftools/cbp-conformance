@@ -32,7 +32,9 @@ single language or runtime is forbidden here.
 - **network** — a `network.v1` document is content-addressed (pinned) before it
   runs; every edge is type-checked at instantiation; execution is a deterministic
   topological order whose trajectory (including the pin) is replayable (see
-  `contracts/network-v1.md`).
+  `contracts/network-v1.md`). A `planner`-provenanced (generated) network
+  additionally re-runs its deterministic planner and must reproduce the pin
+  (revision 2).
 
 ## Canonical form (content addressing)
 

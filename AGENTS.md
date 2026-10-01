@@ -33,10 +33,12 @@ artifact-signing accept/refuse). The trust root is host configuration carried in
 `wasm.lock.v1.json`, never fixture data. Certify with `certifier/certify.py`;
 `../pro/scripts/certify.sh` runs all three suites.
 
-**Layer 2 (static) delivered.** `contracts/network-v1.md` freezes `network.v1`: a
-component network pinned (content-addressed) before it runs, every edge
-type-checked at instantiation, and a deterministic replayable trajectory that
-includes the pin. `vectors/network-{fixtures,suite,lock}.v1.json` (9 cases) pass
-on **both** the Python reference host and the Rust host.
+**Layer 2 delivered (`network.v1` revision 2).** `contracts/network-v1.md` freezes
+`network.v1`: a component network pinned (content-addressed) before it runs,
+every edge type-checked at instantiation, and a deterministic replayable
+trajectory that includes the pin. A `planner`-provenanced (generated) network
+re-runs its deterministic planner and must reproduce the pin (`plan-mismatch`
+otherwise). `vectors/network-{fixtures,suite,lock}.v1.json` (**14 cases**) pass on
+**both** the Python reference host and the Rust host.
 
-**Next:** Layer 2 remainder (generated/deterministic-planner networks).
+**Next:** Layer 3 (read-only web diagram from the pinned network document).
