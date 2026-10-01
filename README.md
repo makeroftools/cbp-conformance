@@ -1,62 +1,103 @@
-# conformance — the shared CBP contract
+# vectors/ — language-agnostic conformance vectors
 
-This repository is the **single source of truth** for the CBP component contract
-and the proof of cross-runtime equivalence. It is **public** (it is the
-whitepaper's evidence and the trust proof); the Pro/Enterprise moat is
-optimization and enterprise components, not the contract.
+Versioned golden cases that any host/runtime must pass to be certified
+(SPEC-0013). The vectors are **data**, not code: an implementation detail of any
+single language or runtime is forbidden here.
 
-## Contents
+| file | what |
+| --- | --- |
+| [`fixtures.v1.json`](fixtures.v1.json) | The reference component **fixtures**: declared channels (ports, direction, coarse `port_type`), tasks, behavior, and grant. A host implements each fixture id once. |
+| [`suite.v1.json`](suite.v1.json) | The **cases**: fixture + scenario + expected normalized observation. |
+| [`vectors.lock.v1.json`](vectors.lock.v1.json) | The **content address** of the suite and fixtures, plus the ABI `contract_sha256` they certify. |
+| [`network-fixtures.v1.json`](network-fixtures.v1.json) | The **network fixtures**: the component fixtures a network instantiates plus the pinned `network.v1` documents. |
+| [`network-suite.v1.json`](network-suite.v1.json) | The **network cases**: a pinned network + scenario + expected trajectory/outputs (Layer 2). |
+| [`network.lock.v1.json`](network.lock.v1.json) | The content address of the network suite/fixtures and the `network.v1` contract document. |
+| [`appointed-fixtures.v1.json`](appointed-fixtures.v1.json) | The **appointed fixtures**: appointed component descriptors (source, license, artifact, declared surface). |
+| [`appointed-suite.v1.json`](appointed-suite.v1.json) | The **appointed cases**: an appointed descriptor + scenario + expected admission/refusal (Layer 4). |
+| [`appointed.lock.v1.json`](appointed.lock.v1.json) | The content address of the appointed suite/fixtures, the `appointed.v1` contract, and the host **source allowlist** (the trust root). |
 
-- `contracts/` — the **WIT** interface for the component ABI (SPEC-0012):
-  `component-abi-v1.wit` (`init` / `run` / `kill`, identity, capabilities,
-  channels/tasks, the framed transport unit), the normative `ABI.md`, and the
-  content address `ABI.lock.v1.json`.
-- `vectors/` — the **language-agnostic conformance vectors** (SPEC-0013):
-  `fixtures.v1.json` + `suite.v1.json`, content-addressed by
-  `vectors.lock.v1.json`, covering pure-function semantics, lifecycle, transport,
-  determinism, capability bounds, and the data-plane encodings (`json` / pinned
-  canonical `msgpack`).
-- `certifier/` — the tool that runs the vectors against a host/runtime and emits
-  a deterministic **certification record**; `reference_host.py` is the test
-  double, `PROTOCOL.md` is the language-neutral host protocol.
+## Categories (SPEC-0013)
 
-## The rule
+- **semantics** — pure-function typed inputs to typed outputs, including edge and
+  error cases.
+- **lifecycle** — `init` / `run` / `kill` ordering, pre-init handling,
+  deterministic teardown.
+- **transport** — channel/task announcement over the initial hard-coded
+  channels, the `ready` close, packet ordering.
+- **determinism** — identical vectors yield identical outputs and ordering across
+  runs (`determinism.runs`).
+- **capability** — a component cannot exceed its granted capabilities or envelope;
+  escape attempts fail closed.
+- **encoding** — the data plane renders the *same typed value* deterministically
+  under the granted encoding (`json` baseline, pinned canonical `msgpack`),
+  cross-encoding equivalence holds, and non-canonical bytes are rejected
+  fail-closed (see `contracts/ABI.md` §2a–§2b).
+- **network** — a `network.v1` document is content-addressed (pinned) before it
+  runs; every edge is type-checked at instantiation; execution is a deterministic
+  topological order whose trajectory (including the pin) is replayable (see
+  `contracts/network-v1.md`). A `planner`-provenanced (generated) network
+  additionally re-runs its deterministic planner and must reproduce the pin
+  (revision 2).
+- **appointed** — a component from a named external origin is admitted only
+  through a host-configured **source allowlist** and a detached Ed25519 signature
+  over its exact bytes, runs contained with zero capabilities (A0), and records a
+  scoped Assurance Label (see `contracts/appointed-v1.md`); admission is ordered,
+  fail-closed, and idempotent.
 
-**Equivalence is proven by the vectors, never assumed.** A realization of a
-component — by translation/compilation (canonically WASM) or by native-runtime
-invocation (language-server protocol, dialed-up JIT runtime) — is trusted only
-after it passes the same vectors. Translation is a *generation* act; its output
-is untrusted until verified.
+## Canonical form (content addressing)
 
-Both `core/` (Python reflection) and `pro/` (Rust) pin this repo and must pass
-its vectors; that is what lets the Python reflection stand in for Rust without
-divergence.
+Both JSON files are stored in canonical form so their sha256 is stable:
 
-## Certify (Layer 0, offline)
-
-```sh
-# offline, against the in-process reference host
-python3 certifier/certify.py
-
-# an external host over the cbp.conformance-host.v1 protocol
-python3 certifier/certify.py --host-cmd "python3 certifier/reference_host.py"
+```
+UTF-8, keys sorted, separators "," and ":", json.dumps(sort_keys=True,
+separators=(",", ":"), ensure_ascii=False) + one trailing newline
 ```
 
-Exit `0` certified · `1` a case failed/nondeterministic · `2` the suite, lock, or
-contract drifted (refused before running).
+The certifier refuses to run unless each file re-serializes byte-for-byte to its
+canonical form **and** matches `vectors.lock.v1.json`, and unless
+`contract_sha256` matches `contracts/ABI.lock.v1.json`.
 
-## Status
+## Scenario
 
-**Layers 0/1a/1b/1c delivered:** the `component-abi.v1` contract (revision 3,
-adding the data-plane `transport.send-on` / `receive-on`) and the v1 vectors are
-frozen and content-addressed. The certifier runs the shared suite **31/31** on the
-Python reference host (in-process and over the protocol) and on the Rust host
-(`pro/cbp-host`), and the **WASM execution suite 10/10** — including a real
-`component-abi.v1` WASM guest that announces channels/tasks and exchanges
-Information Packets over the transport. Artifacts are **signed**: a detached
-**Ed25519** signature must verify against the host trust root in
-`wasm.lock.v1.json` before anything executes (unsigned/bad-signature refused).
-The **`network.v1` suite 14/14** (revision 2) certifies pinned, typed, replayable
-network execution — static and deterministic-planner — on both the Python
-reference host and the Rust host.
-**Next:** Layer 4 (appointed components; static-only fallback).
+```json
+{"lifecycle": ["init","run","kill"],   // entrypoints to invoke, in order (default)
+ "encoding": "json",                   // the data-plane encoding the host grants ("json"|"msgpack")
+ "declared_contract_mismatch": false,  // force a boot-config contract mismatch
+ "packets": [{"port":"in","type":"int","value":42}],              // typed inputs
+ "raw_packets": [{"port":"in","encoding":"msgpack","hex":"2a"}]}  // pre-encoded bytes (strict decode)
+```
+
+An input may be given **typed** (`packets`) or **pre-encoded** (`raw_packets`).
+A raw packet is decoded under its declared encoding and its bytes must be in
+**canonical form**; any non-canonical, non-conformant, or trailing byte sequence
+is rejected as `encoding-violation`.
+
+## Normalized observation
+
+A host reports, per case:
+
+```json
+{"lifecycle": ["init","run","kill"],
+ "announcements": [{"kind":"channel","name":"in","direction":"in","port_type":"any"},
+                   {"kind":"task","name":"identity","input-ports":["in"],"output-ports":["out"]},
+                   {"kind":"ready"}],
+ "packets_out": [{"port":"out","type":"int","value":42}],
+ "encoded": [{"port":"out","encoding":"msgpack","hex":"2a"}],
+ "error": null}
+```
+
+Dynamic endpoints and free-text error messages are **dropped** in normalization:
+endpoints are runtime-specific and must not affect conformance, and only
+`error.kind` is contractual.
+
+## Comparison rule
+
+- `error` (its `kind`, or `null`) is always compared.
+- `lifecycle` is compared when present in the expected observation.
+- When the expected `error` is `null`, `announcements`, `packets_out`, and — when
+  present — `encoded` are compared exactly (ordered).
+- `network_sha256` and `trajectory` are compared when present in the expected
+  observation (network cases).
+
+Fixtures must be deterministic and runtime-neutral. Certification is defined in
+[`../certifier/`](../certifier/).

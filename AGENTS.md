@@ -41,4 +41,14 @@ re-runs its deterministic planner and must reproduce the pin (`plan-mismatch`
 otherwise). `vectors/network-{fixtures,suite,lock}.v1.json` (**14 cases**) pass on
 **both** the Python reference host and the Rust host.
 
-**Next:** Layer 4 (appointed components; static-only fallback), plus additional vectors as the ABI/network evolve.
+**Layer 4 delivered (`appointed.v1` revision 1).** `contracts/appointed-v1.md`
+freezes the appointed trust gate (SPEC-0015 launch slice): an appointed component
+(untrusted web/RAG bytes) is admitted only through a host-configured source
+allowlist and a detached Ed25519 signature over its exact bytes, runs contained
+with zero capabilities (A0), and records a scoped Assurance Label.
+`vectors/appointed-{fixtures,suite,lock}.v1.json` (**8 cases**) pass **8/8** on
+both the Python reference host and the Rust host. `certifier/reference_host.py`
+carries a pure-stdlib RFC 8032 verifier (test double).
+
+**Next:** signing/distribution remainders (key rotation; the `design/network →
+pin → components.lock` producer; the umbrella `components.lock`).

@@ -12,6 +12,9 @@ single language or runtime is forbidden here.
 | [`network-fixtures.v1.json`](network-fixtures.v1.json) | The **network fixtures**: the component fixtures a network instantiates plus the pinned `network.v1` documents. |
 | [`network-suite.v1.json`](network-suite.v1.json) | The **network cases**: a pinned network + scenario + expected trajectory/outputs (Layer 2). |
 | [`network.lock.v1.json`](network.lock.v1.json) | The content address of the network suite/fixtures and the `network.v1` contract document. |
+| [`appointed-fixtures.v1.json`](appointed-fixtures.v1.json) | The **appointed fixtures**: appointed component descriptors (source, license, artifact, declared surface). |
+| [`appointed-suite.v1.json`](appointed-suite.v1.json) | The **appointed cases**: an appointed descriptor + scenario + expected admission/refusal (Layer 4). |
+| [`appointed.lock.v1.json`](appointed.lock.v1.json) | The content address of the appointed suite/fixtures, the `appointed.v1` contract, and the host **source allowlist** (the trust root). |
 
 ## Categories (SPEC-0013)
 
@@ -35,6 +38,11 @@ single language or runtime is forbidden here.
   `contracts/network-v1.md`). A `planner`-provenanced (generated) network
   additionally re-runs its deterministic planner and must reproduce the pin
   (revision 2).
+- **appointed** — a component from a named external origin is admitted only
+  through a host-configured **source allowlist** and a detached Ed25519 signature
+  over its exact bytes, runs contained with zero capabilities (A0), and records a
+  scoped Assurance Label (see `contracts/appointed-v1.md`); admission is ordered,
+  fail-closed, and idempotent.
 
 ## Canonical form (content addressing)
 
