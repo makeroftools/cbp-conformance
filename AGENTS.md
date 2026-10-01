@@ -23,10 +23,12 @@ See `README.md`; the architecture is frozen in `../core/specs/SPEC-0012` and
 
 ## Status / Next
 
-**Layer 0 delivered** (frozen `component-abi.v1` in `contracts/`, the v1 vectors
-in `vectors/`, and the `certifier/` that runs them — 17/17 on the reference
-host). Validate the WIT with the pinned `wasm-tools` recorded in
-`contracts/ABI.lock.v1.json`; certify with `python3 certifier/certify.py`.
+**Layers 0/1a/1b delivered.** `contracts/` freezes `component-abi.v1` (validated
+with the pinned `wasm-tools` in `ABI.lock.v1.json`); `vectors/` holds the shared
+suite (**31/31** on the Python reference host and the Rust host) and the WASM
+execution suite (**4/4**, run against `artifacts/identity.wasm` by the Rust host).
+Certify with `certifier/certify.py`; `../pro/scripts/certify.sh` runs both suites.
 
-**Layer 1:** a Rust host + signed WASM components over this ABI, certified by
-these same vectors (see `../pro/`). Then the Python reflection host, same ABI.
+**Next (Layer 1c):** a full `component-abi.v1` WASM guest (channel/task
+announcements and Information Packets over the transport), then artifact
+signing/provenance.
