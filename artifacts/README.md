@@ -16,7 +16,7 @@ the host trust root in [`../vectors/wasm.lock.v1.json`](../vectors/wasm.lock.v1.
 before anything executes — an unsigned or bad-signature artifact is refused
 fail-closed.
 
-Source: [`pro/fixtures/`](https://github.com/makeroftools/cbp-pro)
+Source: a private (Rust) edition's `fixtures/`
 (`identity/`, `abi-identity/`; Rust, built with the pinned `cargo-component`
 against `../contracts/component-abi-v1.wit`). The component ABI
 (`component-abi.v1`) is the runtime contract for `abi-identity.wasm`; the
