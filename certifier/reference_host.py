@@ -16,6 +16,7 @@ The data plane supports the two encodings frozen by the ABI: canonical JSON
 
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 import sys
@@ -332,6 +333,7 @@ class ReferenceHost:
 
     def __init__(self, fixtures: dict[str, Any], abi_sha256: str = "") -> None:
         self._fixtures = fixtures["fixtures"]
+        self._networks = fixtures.get("networks", {})
         self._contract = {
             "package-name": "cbp:component",
             "version": "1.0.0",
@@ -339,10 +341,12 @@ class ReferenceHost:
         }
 
     def identity(self) -> dict[str, Any]:
-        return {"name": "cbp-reference-host", "version": "2", "abi": ABI}
+        return {"name": "cbp-reference-host", "version": "3", "abi": ABI}
 
     def run_case(self, case: dict[str, Any]) -> dict[str, Any]:
         """Drive one case and return its normalized observation."""
+        if case.get("category") == "network":
+            return self._run_network_case(case)
         fixture = self._fixtures.get(case["fixture"])
         if fixture is None:
             return self._result(
@@ -498,6 +502,266 @@ class ReferenceHost:
             [{"port": port, "type": coarse_type(out_value), "value": out_value}],
             [{"port": port, "encoding": session_encoding, "hex": data.hex()}],
         )
+
+    # -- network.v1 (Layer 2: pinned, typed, replayable network execution) --
+
+    def _network_error(self, kind: str, message: str = "") -> dict[str, Any]:
+        return {
+            "network_sha256": "",
+            "lifecycle": [],
+            "announcements": [],
+            "packets_out": [],
+            "encoded": [],
+            "trajectory": None,
+            "error": {"kind": kind},
+        }
+
+    def _run_network_case(self, case: dict[str, Any]) -> dict[str, Any]:
+        fixture_id = case.get("fixture", "")
+        doc = self._networks.get(fixture_id)
+        if doc is None:
+            return self._network_error(
+                "malformed-network", f"unknown network {fixture_id!r}"
+            )
+        encoding = case.get("scenario", {}).get("encoding", "json")
+        try:
+            return self._run_network(doc, encoding)
+        except ConformanceError as exc:
+            return self._network_error(exc.kind, exc.message)
+
+    def _run_network(self, doc: dict[str, Any], encoding: str) -> dict[str, Any]:
+        def channel(fixture: dict[str, Any], name: Any, direction: str) -> Any:
+            for ch in fixture["channels"]:
+                if ch["name"] == name and ch["direction"] == direction:
+                    return ch
+            return None
+
+        def compatible(a: str, b: str) -> bool:
+            return a == "any" or b == "any" or a == b
+
+        if not isinstance(doc, dict):
+            raise ConformanceError("malformed-network", "network is not an object")
+        stored = doc.get("content_hash")
+        if not stored:
+            raise ConformanceError("not-pinned", "network has no content_hash")
+        body = {k: v for k, v in doc.items() if k != "content_hash"}
+        computed = hashlib.sha256(canonical_json(body)).hexdigest()
+        if computed != stored:
+            raise ConformanceError(
+                "pin-mismatch", "content_hash does not match the document"
+            )
+
+        components = doc.get("components")
+        if not isinstance(components, list) or not components:
+            raise ConformanceError(
+                "malformed-network", "network must declare components"
+            )
+        by_id: dict[str, Any] = {}
+        for entry in components:
+            if (
+                not isinstance(entry, dict)
+                or not isinstance(entry.get("id"), str)
+                or not entry["id"]
+            ):
+                raise ConformanceError(
+                    "malformed-network", "each component needs a non-empty id"
+                )
+            cid = entry["id"]
+            if cid in by_id:
+                raise ConformanceError(
+                    "malformed-network", f"duplicate component id {cid!r}"
+                )
+            fid = entry.get("fixture")
+            if not isinstance(fid, str) or fid not in self._fixtures:
+                raise ConformanceError(
+                    "unknown-fixture", f"component {cid!r} names unknown fixture {fid!r}"
+                )
+            by_id[cid] = self._fixtures[fid]
+
+        edges = doc.get("edges", [])
+        iips = doc.get("iips", [])
+        if not isinstance(edges, list) or not isinstance(iips, list):
+            raise ConformanceError("malformed-network", "edges/iips must be lists")
+
+        for edge in edges:
+            if not isinstance(edge, dict):
+                raise ConformanceError(
+                    "malformed-network", "each edge must be an object"
+                )
+            frm, to = edge.get("from"), edge.get("to")
+            if frm not in by_id or to not in by_id:
+                raise ConformanceError(
+                    "malformed-network", "edge references an unknown component"
+                )
+            src = channel(by_id[frm], edge.get("from_port"), "out")
+            dst = channel(by_id[to], edge.get("to_port"), "in")
+            if src is None or dst is None:
+                raise ConformanceError(
+                    "malformed-network", "edge references an undeclared port"
+                )
+            if not compatible(src["port_type"], dst["port_type"]):
+                raise ConformanceError(
+                    "type-mismatch",
+                    f"incompatible {src['port_type']} -> {dst['port_type']}",
+                )
+
+        bound: set[tuple[str, str]] = set()
+        for iip in iips:
+            if not isinstance(iip, dict):
+                raise ConformanceError(
+                    "malformed-network", "each IIP must be an object"
+                )
+            to, port = iip.get("to"), iip.get("port")
+            if to not in by_id:
+                raise ConformanceError(
+                    "malformed-network", "IIP references an unknown component"
+                )
+            ch = channel(by_id[to], port, "in")
+            if ch is None:
+                raise ConformanceError(
+                    "malformed-network", "IIP references an undeclared in-port"
+                )
+            if (to, port) in bound:
+                raise ConformanceError(
+                    "malformed-network", "in-port has more than one IIP"
+                )
+            bound.add((to, port))
+            if not matches_type(iip.get("value"), ch["port_type"]):
+                raise ConformanceError(
+                    "type-violation", f"IIP does not match {ch['port_type']!r}"
+                )
+        for edge in edges:
+            if (edge["to"], edge["to_port"]) in bound:
+                raise ConformanceError(
+                    "malformed-network", "in-port has both an IIP and an edge"
+                )
+
+        order = self._network_order(by_id, edges)
+
+        outputs: dict[str, Any] = {}
+        steps: list[dict[str, Any]] = []
+        for step, cid in enumerate(order):
+            fixture = by_id[cid]
+            task = fixture["tasks"][0]
+            values: dict[str, Any] = {}
+            for iip in iips:
+                if iip["to"] == cid:
+                    values[iip["port"]] = iip["value"]
+            for edge in edges:
+                if edge["to"] == cid:
+                    values[edge["to_port"]] = outputs[edge["from"]]
+            try:
+                out_value = self._network_behavior(task, values)
+            except KeyError as exc:
+                raise ConformanceError(
+                    "failed", f"component {cid!r} missing input {exc}"
+                ) from exc
+            out_port = task["output-ports"][0]
+            out_ch = channel(fixture, out_port, "out")
+            declared = out_ch["port_type"] if out_ch is not None else "any"
+            if not matches_type(out_value, declared):
+                raise ConformanceError(
+                    "type-violation",
+                    f"{out_value!r} does not match declared {declared!r}",
+                )
+            outputs[cid] = out_value
+            inputs = [
+                {"port": port, "type": coarse_type(values[port]), "value": values[port]}
+                for port in sorted(values)
+            ]
+            steps.append(
+                {
+                    "step": step,
+                    "component": cid,
+                    "task": task["name"],
+                    "inputs": inputs,
+                    "outputs": [
+                        {
+                            "port": out_port,
+                            "type": coarse_type(out_value),
+                            "value": out_value,
+                        }
+                    ],
+                }
+            )
+
+        terminal: list[dict[str, Any]] = []
+        for cid in order:
+            fixture = by_id[cid]
+            out_port = fixture["tasks"][0]["output-ports"][0]
+            if any(e["from"] == cid and e["from_port"] == out_port for e in edges):
+                continue
+            value = outputs[cid]
+            terminal.append(
+                {
+                    "component": cid,
+                    "port": out_port,
+                    "type": coarse_type(value),
+                    "value": value,
+                }
+            )
+        terminal.sort(key=lambda t: (t["component"], t["port"]))
+        encoded = [
+            {
+                "component": t["component"],
+                "port": t["port"],
+                "encoding": encoding,
+                "hex": encode_value(t["value"], encoding).hex(),
+            }
+            for t in terminal
+        ]
+        return {
+            "network_sha256": computed,
+            "lifecycle": ["run"],
+            "announcements": [],
+            "packets_out": terminal,
+            "encoded": encoded,
+            "trajectory": {
+                "network_sha256": computed,
+                "encoding": encoding,
+                "steps": steps,
+            },
+            "error": None,
+        }
+
+    def _network_order(
+        self, by_id: dict[str, Any], edges: list[dict[str, Any]]
+    ) -> list[str]:
+        """A deterministic topological order (ties broken by ascending id)."""
+        indegree: dict[str, int] = {cid: 0 for cid in by_id}
+        adjacency: dict[str, list[str]] = {cid: [] for cid in by_id}
+        for edge in edges:
+            adjacency[edge["from"]].append(edge["to"])
+            indegree[edge["to"]] += 1
+        ready = sorted(cid for cid, deg in indegree.items() if deg == 0)
+        order: list[str] = []
+        while ready:
+            cid = ready.pop(0)
+            order.append(cid)
+            for nxt in sorted(adjacency[cid]):
+                indegree[nxt] -= 1
+                if indegree[nxt] == 0:
+                    ready.append(nxt)
+                    ready.sort()
+        if len(order) != len(by_id):
+            raise ConformanceError("malformed-network", "network contains a cycle")
+        return order
+
+    def _network_behavior(
+        self, task: dict[str, Any], values: dict[str, Any]
+    ) -> Any:
+        behavior = task["behavior"]
+        if behavior == "identity":
+            return values[task["input-ports"][0]]
+        if behavior == "sum-int":
+            return values["a"] + values["b"]
+        if behavior == "concat-str":
+            return values["a"] + values["b"]
+        if behavior == "fail":
+            raise ConformanceError("failed", "explicit failure")
+        if behavior == "emit-wrong-type":
+            return "not-an-int"
+        raise ConformanceError("malformed-network", f"unknown behavior {behavior!r}")
 
 
 def _emit(message: dict[str, Any]) -> None:

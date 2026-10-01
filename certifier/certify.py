@@ -167,6 +167,11 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
         problems.append(
             f"lifecycle mismatch: {actual.get('lifecycle')!r} != {expected.get('lifecycle')!r}"
         )
+    for field in ("network_sha256", "trajectory"):
+        if field in expected and actual.get(field) != expected.get(field):
+            problems.append(
+                f"{field} mismatch: {actual.get(field)!r} != {expected.get(field)!r}"
+            )
     return problems
 
 
@@ -194,6 +199,15 @@ def verify_locks(
         problems.append("suite fixtures_sha256 does not match the fixtures file")
     if contract_lock.get("abi_md_sha256") != abi_md_sha:
         problems.append("ABI.md sha256 does not match contracts/ABI.lock.v1.json")
+    lock_dir = pathlib.Path(lock_path).parent
+    for doc in lock.get("documents", []):
+        doc_path = (lock_dir / doc["path"]).resolve()
+        if not doc_path.is_file():
+            problems.append(f"document {doc['path']} is missing")
+            continue
+        actual_sha = hashlib.sha256(doc_path.read_bytes()).hexdigest()
+        if actual_sha != doc.get("sha256"):
+            problems.append(f"document {doc['path']} sha256 does not match the lock")
     return problems
 
 
