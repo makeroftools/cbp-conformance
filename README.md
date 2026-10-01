@@ -14,7 +14,8 @@ optimization and enterprise components, not the contract.
 - `vectors/` — the **language-agnostic conformance vectors** (SPEC-0013):
   `fixtures.v1.json` + `suite.v1.json`, content-addressed by
   `vectors.lock.v1.json`, covering pure-function semantics, lifecycle, transport,
-  determinism, and capability bounds.
+  determinism, capability bounds, and the data-plane encodings (`json` / pinned
+  canonical `msgpack`).
 - `certifier/` — the tool that runs the vectors against a host/runtime and emits
   a deterministic **certification record**; `reference_host.py` is the test
   double, `PROTOCOL.md` is the language-neutral host protocol.

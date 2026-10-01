@@ -7,7 +7,7 @@ single language or runtime is forbidden here.
 | file | what |
 | --- | --- |
 | [`fixtures.v1.json`](fixtures.v1.json) | The reference component **fixtures**: declared channels (ports, direction, coarse `port_type`), tasks, behavior, and grant. A host implements each fixture id once. |
-| [`suite.v1.json`](suite.v1.json) | The **cases**: fixture + scenario + expected normalized observation, covering the five categories below. |
+| [`suite.v1.json`](suite.v1.json) | The **cases**: fixture + scenario + expected normalized observation. |
 | [`vectors.lock.v1.json`](vectors.lock.v1.json) | The **content address** of the suite and fixtures, plus the ABI `contract_sha256` they certify. |
 
 ## Categories (SPEC-0013)
@@ -22,6 +22,10 @@ single language or runtime is forbidden here.
   runs (`determinism.runs`).
 - **capability** — a component cannot exceed its granted capabilities or envelope;
   escape attempts fail closed.
+- **encoding** — the data plane renders the *same typed value* deterministically
+  under the granted encoding (`json` baseline, pinned canonical `msgpack`),
+  cross-encoding equivalence holds, and non-canonical bytes are rejected
+  fail-closed (see `contracts/ABI.md` §2a–§2b).
 
 ## Canonical form (content addressing)
 
@@ -36,9 +40,24 @@ The certifier refuses to run unless each file re-serializes byte-for-byte to its
 canonical form **and** matches `vectors.lock.v1.json`, and unless
 `contract_sha256` matches `contracts/ABI.lock.v1.json`.
 
+## Scenario
+
+```json
+{"lifecycle": ["init","run","kill"],   // entrypoints to invoke, in order (default)
+ "encoding": "json",                   // the data-plane encoding the host grants ("json"|"msgpack")
+ "declared_contract_mismatch": false,  // force a boot-config contract mismatch
+ "packets": [{"port":"in","type":"int","value":42}],              // typed inputs
+ "raw_packets": [{"port":"in","encoding":"msgpack","hex":"2a"}]}  // pre-encoded bytes (strict decode)
+```
+
+An input may be given **typed** (`packets`) or **pre-encoded** (`raw_packets`).
+A raw packet is decoded under its declared encoding and its bytes must be in
+**canonical form**; any non-canonical, non-conformant, or trailing byte sequence
+is rejected as `encoding-violation`.
+
 ## Normalized observation
 
-A host reports, per case, a normalized observation:
+A host reports, per case:
 
 ```json
 {"lifecycle": ["init","run","kill"],
@@ -46,20 +65,20 @@ A host reports, per case, a normalized observation:
                    {"kind":"task","name":"identity","input-ports":["in"],"output-ports":["out"]},
                    {"kind":"ready"}],
  "packets_out": [{"port":"out","type":"int","value":42}],
+ "encoded": [{"port":"out","encoding":"msgpack","hex":"2a"}],
  "error": null}
 ```
 
 Dynamic endpoints and free-text error messages are **dropped** in normalization:
 endpoints are runtime-specific and must not affect conformance, and only
-`error.kind` is contractual. `packet-value` bodies are canonical JSON (see
-`contracts/ABI.md`).
+`error.kind` is contractual.
 
 ## Comparison rule
 
 - `error` (its `kind`, or `null`) is always compared.
 - `lifecycle` is compared when present in the expected observation.
-- When the expected `error` is `null`, `announcements` and `packets_out` are
-  compared exactly (ordered).
+- When the expected `error` is `null`, `announcements`, `packets_out`, and — when
+  present — `encoded` are compared exactly (ordered).
 
 Fixtures must be deterministic and runtime-neutral. Certification is defined in
 [`../certifier/`](../certifier/).

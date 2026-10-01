@@ -18,6 +18,8 @@ See `README.md`; the architecture is frozen in `../core/specs/SPEC-0012` and
   pinned, signed, version-recorded.
 - Nothing here may encode an implementation detail of any single language or
   runtime.
+- A data-plane packet travels under a **granted, canonical encoding**; encoding
+  equivalence is proven by the vectors, never assumed.
 
 ## Status / Next
 

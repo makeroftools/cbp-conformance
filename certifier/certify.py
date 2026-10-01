@@ -137,6 +137,11 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
                     f"packets_out mismatch: {actual.get('packets_out')!r} "
                     f"!= {expected.get('packets_out')!r}"
                 )
+            if expected.get("encoded") is not None and actual.get("encoded") != expected.get("encoded"):
+                problems.append(
+                    f"encoded mismatch: {actual.get('encoded')!r} "
+                    f"!= {expected.get('encoded')!r}"
+                )
     elif not actual_error or actual_error.get("kind") != expected_error.get("kind"):
         problems.append(f"expected error kind {expected_error.get('kind')!r}, got {actual_error!r}")
     if "lifecycle" in expected and actual.get("lifecycle") != expected.get("lifecycle"):
