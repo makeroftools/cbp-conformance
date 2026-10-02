@@ -5,8 +5,8 @@ They override all other considerations. When a choice trades any of these for
 speed, convenience, or feature completeness, that choice is forbidden.
 
 **Operating levels.** The active level ("mode") is declared in
-[`.agentfactory.toml`](.agentfactory.toml) and explained in
-[`docs/agent/levels.md`](docs/agent/levels.md). The level changes which
+[`.agentfactory.toml`](../core/.agentfactory.toml) and explained in
+[`docs/agent/levels.md`](../core/docs/agent/levels.md). The level changes which
 gates and which human review apply; it never suspends any law below.
 
 ## 1. Correctness First
@@ -65,7 +65,7 @@ fetching versioned components from the self-hosted registry — happens only at
 **acquisition time**, is **pinned** (immutable commit + content hash),
 **signed and verified** (fail-closed), and **offline-capable** (served from a
 local mirror or cache). Acquisition never weakens the run-time guarantee. See
-[`specs/SPEC-0007-harness-shell-component-distribution.md`](specs/SPEC-0007-harness-shell-component-distribution.md).
+[`specs/SPEC-0007-harness-shell-component-distribution.md`](../core/specs/SPEC-0007-harness-shell-component-distribution.md).
 
 ## 6. Full Auditability
 

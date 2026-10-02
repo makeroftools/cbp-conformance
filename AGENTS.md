@@ -50,5 +50,8 @@ with zero capabilities (A0), and records a scoped Assurance Label.
 both the Python reference host and the Rust host. `certifier/reference_host.py`
 carries a pure-stdlib RFC 8032 verifier (test double).
 
-**Next:** signing/distribution remainders (key rotation; the `design/network →
-pin → components.lock` producer; the umbrella `components.lock`).
+**Next:** the shared contract is frozen and certified. The signing/distribution
+spine (key rotation; the `design/network → pin → components.lock` producer; the
+umbrella `components.lock`) is delivered in `../core`; remaining work is
+operator-gated (the L3 flip; SPEC-0018 Phases 3–6) — see
+[`../core/HANDOFF.md`](../core/HANDOFF.md).
