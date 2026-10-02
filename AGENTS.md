@@ -50,6 +50,15 @@ with zero capabilities (A0), and records a scoped Assurance Label.
 both the Python reference host and the Rust host. `certifier/reference_host.py`
 carries a pure-stdlib RFC 8032 verifier (test double).
 
+**UI ABI authored (`ui.v1`; SPEC-0022).** `contracts/ui-v1.wit` freezes a
+target-agnostic **UI world** (`cbp:ui@1.0.0`): a UI component exports
+`describe`/`render`/`handle` and imports a host-mediated projection/directive
+boundary; it holds no execution capability and no ambient authority.
+`UI-ABI.md` is the normative prose (targets, sandbox, assembly) and
+`ui.lock.v1.json` pins the content address (pinned `wasm-tools` 1.260.0).
+Additive; extends `component-abi.v1`; no new node kind. A conformance suite
+is future.
+
 **Next:** the shared contract is frozen and certified. The signing/distribution
 spine (key rotation; the `design/network → pin → components.lock` producer; the
 umbrella `components.lock`) is delivered in `../core`; remaining work is

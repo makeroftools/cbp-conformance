@@ -14,7 +14,7 @@ frozen in `../core/specs/SPEC-0012` (component ABI) and
 
 | path | what |
 | --- | --- |
-| [`contracts/`](contracts/README.md) | The frozen contracts: `component-abi.v1` (WIT + normative `ABI.md` + `ABI.lock.v1.json`), `network.v1`, `appointed.v1`. |
+| [`contracts/`](contracts/README.md) | The frozen contracts: `component-abi.v1` (WIT + normative `ABI.md` + `ABI.lock.v1.json`), `network.v1`, `appointed.v1`, `ui.v1`. |
 | [`vectors/`](vectors/README.md) | The language-agnostic conformance cases and their content addresses: the shared ABI suite (**31**), `network.v1` (**14**), `appointed.v1` (**8**), and the WASM execution suite (**10**). |
 | [`certifier/`](certifier/README.md) | `certify.py` (stdlib only) and `reference_host.py`; the `cbp.conformance-host.v1` protocol. |
 | [`artifacts/`](artifacts/README.md) | The signed, content-addressed WASM fixtures (`identity.wasm`, `abi-identity.wasm`). |

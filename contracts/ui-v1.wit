@@ -1,0 +1,111 @@
+/// CBP UI ABI v1 — the target-agnostic UI component contract (SPEC-0022).
+///
+/// A UI component is an ordinary CBP component (one node ontology) whose typed
+/// surface is *presentation*: it declares the projections it consumes and the
+/// directives it may emit, and it renders a **target-neutral** tree. It holds no
+/// execution capability and no ambient authority; every read and every effect is
+/// host-mediated. The target bindings, the sandbox rules, and the assembly /
+/// pinning rules cannot be fully expressed in WIT and are normative in
+/// `UI-ABI.md`. This file and that document are one contract, `ui.v1`.
+package cbp:ui@1.0.0;
+
+/// The shared typed surface of the UI ABI.
+interface types {
+  /// The medium a UI binds to. A target implements this ABI; it never changes a
+  /// UI component's meaning (SPEC-0016).
+  enum ui-target {
+    web,
+    cli,
+    os,
+    embedded,
+  }
+
+  /// The honest status of a projection (SPEC-0015). A view must render a claim's
+  /// status truthfully; an unverified claim never renders as verified.
+  enum assurance {
+    verified,
+    model,
+    unverified,
+    refused,
+  }
+
+  /// A projection schema id, e.g. `cbp.diagram.v1` or `review.v1`.
+  type schema-id = string;
+
+  /// A declared capability (least privilege; default deny). An opaque,
+  /// host-defined name the UI manifest requests.
+  type capability = string;
+
+  /// Canonical-JSON bytes (the control-plane encoding; ABI.md §2a).
+  type json = list<u8>;
+
+  /// A projection: a pinned, provenance-honest document the UI may display.
+  record projection {
+    schema: schema-id,
+    content-hash: string,
+    assurance: assurance,
+    data: json,
+  }
+
+  /// A directive: a content-addressed intent emitted by the UI and executed by
+  /// the verified spine. The UI never mutates platform state directly.
+  record directive {
+    name: string,
+    args: json,
+  }
+
+  /// What a UI component declares: its target-neutral manifest.
+  record ui-manifest {
+    id: string,
+    abi-version: string,
+    targets: list<ui-target>,
+    projections: list<schema-id>,
+    directives: list<string>,
+    capabilities: list<capability>,
+    slots: list<string>,
+    tokens: json,
+  }
+
+  /// UI-level failure. Fail-closed: every failure is explicit and audited; there
+  /// is no silent or partial success.
+  variant ui-error {
+    /// The UI ABI version is not supported (strict negotiation).
+    abi-mismatch(string),
+    /// A projection the manifest did not declare was requested.
+    projection-denied(schema-id),
+    /// A directive the manifest did not declare was emitted.
+    directive-denied(string),
+    /// Any malformed input or other explicit, contained failure.
+    malformed(string),
+  }
+}
+
+/// The host boundary a UI imports: the only way to read state or take effect.
+interface host {
+  use types.{projection, directive, schema-id, ui-error};
+
+  /// Fetch one granted projection (host-mediated; no ambient state access).
+  get-projection: func(schema: schema-id) -> result<projection, ui-error>;
+
+  /// Submit a content-addressed directive (host-mediated; verified spine).
+  submit-directive: func(d: directive) -> result<string, ui-error>;
+
+  /// Emit a bounded, non-mutating log line.
+  log: func(message: string);
+}
+
+/// The UI world: what a UI component exports and imports.
+world ui {
+  use types.{ui-manifest, projection, directive, json, ui-error};
+
+  /// Declare the component's UI manifest (fail-closed on ABI mismatch).
+  export describe: func() -> result<ui-manifest, ui-error>;
+
+  /// Render a granted projection into a target-neutral tree (canonical JSON).
+  export render: func(p: projection) -> result<json, ui-error>;
+
+  /// Handle one target event, optionally emitting a single directive.
+  export handle: func(event: json) -> result<option<directive>, ui-error>;
+
+  import host;
+}
