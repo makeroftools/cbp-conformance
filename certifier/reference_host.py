@@ -1230,7 +1230,7 @@ class ReferenceHost:
         name = event.get("directive") if isinstance(event, dict) else None
         if not isinstance(name, str):
             return self._ui_error("malformed")
-        args = event.get("args") or {}
+        args = (event.get("args") if isinstance(event, dict) else None) or {}
         if not isinstance(args, dict):
             return self._ui_error("malformed")
         binding = None
