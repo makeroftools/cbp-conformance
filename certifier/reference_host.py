@@ -26,6 +26,11 @@ from typing import Any
 PROTOCOL = "cbp.conformance-host.v1"
 ABI = "component-abi.v1"
 
+UI_ABI_VERSION = "1.0.0"
+UI_TARGETS = ("web", "cli", "os", "embedded")
+UI_ASSURANCES = ("verified", "model", "unverified", "refused")
+UI_FORBIDDEN_TOKEN_KEYS = ("value", "secret", "plaintext", "data", "material")
+
 _MP_MAX_DEPTH = 32
 _S64_MIN = -(2**63)
 _S64_MAX = 2**63 - 1
@@ -459,6 +464,8 @@ class ReferenceHost:
             return self._run_network_case(case)
         if case.get("category") == "appointed":
             return self._run_appointed_case(case)
+        if case.get("category") == "ui":
+            return self._run_ui_case(case)
         fixture = self._fixtures.get(case["fixture"])
         if fixture is None:
             return self._result(
@@ -1066,6 +1073,189 @@ class ReferenceHost:
         if behavior == "emit-wrong-type":
             return "not-an-int"
         raise ConformanceError("malformed-network", f"unknown behavior {behavior!r}")
+
+
+    # -- ui.v1 (SPEC-0022: target-agnostic UI component contract) ----------
+
+    def _ui_ok(self, ui: dict[str, Any]) -> dict[str, Any]:
+        return {"ui": ui, "error": None}
+
+    def _ui_error(self, kind: str) -> dict[str, Any]:
+        return {"ui": None, "error": {"kind": kind}}
+
+    def _ui_str_list(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ConformanceError("malformed-module", "expected a list of strings")
+        out: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                raise ConformanceError("malformed-module", "expected a string")
+            out.append(item)
+        return out
+
+    def _ui_manifest(self, fixture: dict[str, Any]) -> dict[str, Any]:
+        """The canonical ``ui.v1`` manifest (name-sorted collections)."""
+        fixture_id = fixture.get("id")
+        if not isinstance(fixture_id, str) or not fixture_id:
+            raise ConformanceError("malformed-module", "ui fixture needs an id")
+        targets = sorted(self._ui_str_list(fixture.get("targets")))
+        if not targets:
+            raise ConformanceError("malformed-module", "ui fixture declares no targets")
+        for target in targets:
+            if target not in UI_TARGETS:
+                raise ConformanceError(
+                    "malformed-module", f"unsupported ui target {target!r}"
+                )
+        projections = sorted(self._ui_str_list(fixture.get("projections")))
+        if not projections:
+            raise ConformanceError(
+                "malformed-module", "ui fixture declares no projections"
+            )
+        directives: list[dict[str, Any]] = []
+        for entry in fixture.get("directives", []) or []:
+            if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+                raise ConformanceError("malformed-module", "malformed ui directive")
+            directives.append(
+                {
+                    "name": entry["name"],
+                    "requires_approval": bool(entry.get("requires_approval", False)),
+                }
+            )
+        directives.sort(key=lambda item: item["name"])
+        capabilities: list[dict[str, Any]] = []
+        for entry in fixture.get("capabilities", []) or []:
+            if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+                raise ConformanceError("malformed-module", "malformed ui capability")
+            capabilities.append(
+                {"name": entry["name"], "version": str(entry.get("version", "1"))}
+            )
+        capabilities.sort(key=lambda item: item["name"])
+        slots = sorted(self._ui_str_list(fixture.get("slots")))
+        tokens = fixture.get("tokens") or {}
+        if not isinstance(tokens, dict):
+            raise ConformanceError("malformed-module", "ui tokens must be a mapping")
+        for forbidden in UI_FORBIDDEN_TOKEN_KEYS:
+            if forbidden in tokens:
+                raise ConformanceError(
+                    "malformed-module",
+                    "ui tokens declare references only; secret material is forbidden",
+                )
+        return {
+            "id": fixture_id,
+            "abi_version": fixture.get("abi_version"),
+            "targets": targets,
+            "projections": projections,
+            "directives": directives,
+            "capabilities": capabilities,
+            "slots": slots,
+            "tokens": dict(tokens),
+        }
+
+    def _run_ui_case(self, case: dict[str, Any]) -> dict[str, Any]:
+        fixture_id = case.get("fixture", "")
+        fixture = self._fixtures.get(fixture_id)
+        if not isinstance(fixture, dict):
+            return self._ui_error("malformed-module")
+        scenario = case.get("scenario", {})
+        if not isinstance(scenario, dict):
+            return self._ui_error("malformed")
+        if fixture.get("abi_version") != UI_ABI_VERSION:
+            return self._ui_error("abi-mismatch")
+        try:
+            manifest = self._ui_manifest(fixture)
+        except ConformanceError as exc:
+            return self._ui_error(exc.kind)
+        ui_hash = hashlib.sha256(canonical_json(manifest)).hexdigest()
+        op = scenario.get("op")
+        if op == "describe":
+            return self._ui_ok(
+                {"op": "describe", "ui_hash": ui_hash, "manifest": manifest}
+            )
+        if op == "render":
+            return self._run_ui_render(fixture, scenario, ui_hash)
+        if op == "handle":
+            return self._run_ui_handle(fixture, scenario, ui_hash)
+        return self._ui_error("malformed")
+
+    def _run_ui_render(
+        self, fixture: dict[str, Any], scenario: dict[str, Any], ui_hash: str
+    ) -> dict[str, Any]:
+        projection = scenario.get("projection")
+        schema = projection.get("schema") if isinstance(projection, dict) else None
+        if not isinstance(schema, str):
+            return self._ui_error("malformed")
+        declared = self._ui_str_list(fixture.get("projections"))
+        if schema not in declared:
+            return self._ui_error("projection-denied")
+        assurance = scenario.get("assurance", "verified")
+        if assurance not in UI_ASSURANCES:
+            return self._ui_error("malformed")
+        if fixture.get("view") != "echo-keys":
+            return self._ui_error("malformed-module")
+        data = projection.get("data") if isinstance(projection, dict) else None
+        if not isinstance(data, dict):
+            return self._ui_error("malformed")
+        fields = [
+            {
+                "node": "field",
+                "label": key,
+                "value": canonical_json(data[key]).decode("utf-8"),
+            }
+            for key in sorted(data)
+        ]
+        tree = {
+            "node": "view",
+            "title": fixture.get("id"),
+            "schema": schema,
+            "assurance": assurance,
+            "fields": fields,
+        }
+        tree_hash = hashlib.sha256(canonical_json(tree)).hexdigest()
+        return self._ui_ok(
+            {
+                "op": "render",
+                "ui_hash": ui_hash,
+                "tree": tree,
+                "tree_hash": tree_hash,
+                "assurance": assurance,
+            }
+        )
+
+    def _run_ui_handle(
+        self, fixture: dict[str, Any], scenario: dict[str, Any], ui_hash: str
+    ) -> dict[str, Any]:
+        event = scenario.get("event")
+        name = event.get("directive") if isinstance(event, dict) else None
+        if not isinstance(name, str):
+            return self._ui_error("malformed")
+        args = event.get("args") or {}
+        if not isinstance(args, dict):
+            return self._ui_error("malformed")
+        binding = None
+        for entry in fixture.get("directives", []) or []:
+            if isinstance(entry, dict) and entry.get("name") == name:
+                binding = entry
+                break
+        if binding is None:
+            return self._ui_error("directive-denied")
+        directive = {
+            "name": name,
+            "args": args,
+            "requires_approval": bool(binding.get("requires_approval", False)),
+        }
+        content_hash = hashlib.sha256(
+            canonical_json({"name": name, "args": args})
+        ).hexdigest()
+        return self._ui_ok(
+            {
+                "op": "handle",
+                "ui_hash": ui_hash,
+                "directive": directive,
+                "content_hash": content_hash,
+            }
+        )
 
 
 def _emit(message: dict[str, Any]) -> None:

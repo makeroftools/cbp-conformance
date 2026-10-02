@@ -56,8 +56,12 @@ target-agnostic **UI world** (`cbp:ui@1.0.0`): a UI component exports
 boundary; it holds no execution capability and no ambient authority.
 `UI-ABI.md` is the normative prose (targets, sandbox, assembly) and
 `ui.lock.v1.json` pins the content address (pinned `wasm-tools` 1.260.0).
-Additive; extends `component-abi.v1`; no new node kind. A conformance suite
-is future.
+Additive; extends `component-abi.v1`; no new node kind. The **`ui.v1`
+conformance suite** (`vectors/ui-{fixtures,suite,lock}.v1.json`, **10/10** on
+the Python reference host and the Rust host) proves the manifest is canonical
+and content-addressed, `render` is a deterministic pure function of a granted
+projection, `handle` emits a content-addressed intent, and
+`abi-mismatch`/`projection-denied`/`directive-denied` fail closed.
 
 **Next:** the shared contract is frozen and certified. The signing/distribution
 spine (key rotation; the `design/network → pin → components.lock` producer; the

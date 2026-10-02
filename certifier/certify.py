@@ -161,6 +161,10 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
                     f"encoded mismatch: {actual.get('encoded')!r} "
                     f"!= {expected.get('encoded')!r}"
                 )
+            if "ui" in expected and actual.get("ui") != expected.get("ui"):
+                problems.append(
+                    f"ui mismatch: {actual.get('ui')!r} != {expected.get('ui')!r}"
+                )
             if "appointment" in expected and actual.get("appointment") != expected.get("appointment"):
                 problems.append(
                     f"appointment mismatch: {actual.get('appointment')!r} "

@@ -15,7 +15,7 @@ frozen in `../core/specs/SPEC-0012` (component ABI) and
 | path | what |
 | --- | --- |
 | [`contracts/`](contracts/README.md) | The frozen contracts: `component-abi.v1` (WIT + normative `ABI.md` + `ABI.lock.v1.json`), `network.v1`, `appointed.v1`, `ui.v1`. |
-| [`vectors/`](vectors/README.md) | The language-agnostic conformance cases and their content addresses: the shared ABI suite (**31**), `network.v1` (**14**), `appointed.v1` (**8**), and the WASM execution suite (**10**). |
+| [`vectors/`](vectors/README.md) | The language-agnostic conformance cases and their content addresses: the shared ABI suite (**31**), `network.v1` (**14**), `appointed.v1` (**8**), `ui.v1` (**10**), and the WASM execution suite (**10**). |
 | [`certifier/`](certifier/README.md) | `certify.py` (stdlib only) and `reference_host.py`; the `cbp.conformance-host.v1` protocol. |
 | [`artifacts/`](artifacts/README.md) | The signed, content-addressed WASM fixtures (`identity.wasm`, `abi-identity.wasm`). |
 | [`tools/`](tools/) | `safe-replace.sh` (Law 11). |
@@ -33,6 +33,11 @@ frozen in `../core/specs/SPEC-0012` (component ABI) and
 - **`appointed.v1`** (revision 1) — the allowlisted appointment gate: a
   host-configured source allowlist plus a detached Ed25519 signature over the
   exact bytes, A0 containment, and a recorded Assurance Label.
+- **`ui.v1`** (revision 1) — the target-agnostic UI component contract: a
+  canonical, content-addressed manifest; `render` as a deterministic pure
+  function of a granted projection; content-addressed directive intents; and
+  strict negotiation / default deny (`abi-mismatch` / `projection-denied` /
+  `directive-denied`).
 
 The contracts are **additive-only**: `component-abi.v1` is consumed, so any change
 is `component-abi.v2` (see [`contracts/README.md`](contracts/README.md)).
@@ -52,7 +57,12 @@ python3 certifier/certify.py --suite vectors/appointed-suite.v1.json \
   --fixtures vectors/appointed-fixtures.v1.json --lock vectors/appointed.lock.v1.json \
   --contract-lock contracts/ABI.lock.v1.json --artifacts-dir artifacts
 
-# all four suites against the Rust host (builds it first)
+# ui.v1
+python3 certifier/certify.py --suite vectors/ui-suite.v1.json \
+  --fixtures vectors/ui-fixtures.v1.json --lock vectors/ui.lock.v1.json \
+  --contract-lock contracts/ABI.lock.v1.json
+
+# all five suites against the Rust host (builds it first)
 ../pro/scripts/certify.sh
 ```
 

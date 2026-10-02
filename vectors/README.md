@@ -15,6 +15,9 @@ single language or runtime is forbidden here.
 | [`appointed-fixtures.v1.json`](appointed-fixtures.v1.json) | The **appointed fixtures**: appointed component descriptors (source, license, artifact, declared surface). |
 | [`appointed-suite.v1.json`](appointed-suite.v1.json) | The **appointed cases**: an appointed descriptor + scenario + expected admission/refusal (Layer 4). |
 | [`appointed.lock.v1.json`](appointed.lock.v1.json) | The content address of the appointed suite/fixtures, the `appointed.v1` contract, and the host **source allowlist** (the trust root). |
+| [`ui-fixtures.v1.json`](ui-fixtures.v1.json) | The **UI fixtures**: target-agnostic `ui.v1` component manifests (targets, projections, directives, capabilities, slots, tokens) and their reference view. |
+| [`ui-suite.v1.json`](ui-suite.v1.json) | The **ui cases**: describe/render/handle + the deny paths + a deterministic content address (SPEC-0022). |
+| [`ui.lock.v1.json`](ui.lock.v1.json) | The content address of the ui suite/fixtures and the `ui.v1` contract documents. |
 
 ## Categories (SPEC-0013)
 
@@ -40,9 +43,15 @@ single language or runtime is forbidden here.
   (revision 2).
 - **appointed** — a component from a named external origin is admitted only
   through a host-configured **source allowlist** and a detached Ed25519 signature
-  over its exact bytes, runs contained with zero capabilities (A0), and records a
-  scoped Assurance Label (see `contracts/appointed-v1.md`); admission is ordered,
+  over its exact bytes, runs contained with zero capabilities (A0), and records
+  a scoped Assurance Label (see `contracts/appointed-v1.md`); admission is ordered,
   fail-closed, and idempotent.
+- **ui** — a `ui.v1` component manifest is canonical and content-addressed;
+  `render` is a deterministic pure function of a granted projection; `handle`
+  emits a content-addressed directive intent (no state mutation); an unknown ABI
+  version, an undeclared projection, and an undeclared directive fail closed
+  (`abi-mismatch` / `projection-denied` / `directive-denied`; see
+  `contracts/UI-ABI.md`).
 
 ## Canonical form (content addressing)
 
@@ -98,6 +107,7 @@ endpoints are runtime-specific and must not affect conformance, and only
   present — `encoded` are compared exactly (ordered).
 - `network_sha256` and `trajectory` are compared when present in the expected
   observation (network cases).
+- `ui` is compared when present in the expected observation (ui cases).
 
 Fixtures must be deterministic and runtime-neutral. Certification is defined in
 [`../certifier/`](../certifier/).
