@@ -34,6 +34,57 @@ COMPONENT = CORE + "Component"
 ATOMIC = CORE + "AtomicComponent"
 INPUT_PORT = CORE + "InputPort"
 OUTPUT_PORT = CORE + "OutputPort"
+SUB_CLASS_OF = CORE + "subClassOf"
+SOURCE = CORE + "SourceComponent"
+SINK = CORE + "SinkComponent"
+SPECIAL = CORE + "SpecialAtomic"
+
+def _atom(s, p, o, negated=False):
+    return {"s": s, "p": p, "o": o, "negated": negated}
+
+
+RULES = sorted(
+    [
+        {
+            "schema": "ontology.rules.v1",
+            "id": CORE + "rule/subclass-transitive",
+            "head": _atom({"var": "x"}, SUB_CLASS_OF, {"var": "z"}),
+            "body": [
+                _atom({"var": "x"}, SUB_CLASS_OF, {"var": "y"}),
+                _atom({"var": "y"}, SUB_CLASS_OF, {"var": "z"}),
+            ],
+        },
+        {
+            "schema": "ontology.rules.v1",
+            "id": CORE + "rule/type-subsumption",
+            "head": _atom({"var": "x"}, TYPE, {"var": "c"}),
+            "body": [
+                _atom({"var": "x"}, TYPE, {"var": "d"}),
+                _atom({"var": "d"}, SUB_CLASS_OF, {"var": "c"}),
+            ],
+        },
+        {
+            "schema": "ontology.rules.v1",
+            "id": CORE + "rule/source",
+            "head": _atom({"var": "x"}, TYPE, {"term": SOURCE}),
+            "body": [
+                _atom({"var": "x"}, TYPE, {"term": COMPONENT}),
+                _atom({"var": "x"}, INPUT, {"var": "_"}, negated=True),
+            ],
+        },
+        {
+            "schema": "ontology.rules.v1",
+            "id": CORE + "rule/sink",
+            "head": _atom({"var": "x"}, TYPE, {"term": SINK}),
+            "body": [
+                _atom({"var": "x"}, TYPE, {"term": COMPONENT}),
+                _atom({"var": "x"}, OUTPUT, {"var": "_"}, negated=True),
+            ],
+        },
+    ],
+    key=lambda rule: rule["id"],
+)
+
 
 ONTOLOGY = {
     "schema": "ontology.v1",
@@ -49,6 +100,9 @@ ONTOLOGY = {
         {"kind": "class", "name": CORE + "Port", "sub_class_of": [], "domain": [], "range": []},
         {"kind": "class", "name": INPUT_PORT, "sub_class_of": [CORE + "Port"], "domain": [], "range": []},
         {"kind": "class", "name": OUTPUT_PORT, "sub_class_of": [CORE + "Port"], "domain": [], "range": []},
+        {"kind": "class", "name": SOURCE, "sub_class_of": [COMPONENT], "domain": [], "range": []},
+        {"kind": "class", "name": SINK, "sub_class_of": [COMPONENT], "domain": [], "range": []},
+        {"kind": "class", "name": SPECIAL, "sub_class_of": [ATOMIC], "domain": [], "range": []},
         {"kind": "property", "name": HAS_CAPABILITY, "sub_class_of": [], "domain": [COMPONENT], "range": []},
         {"kind": "property", "name": IMPLEMENTS, "sub_class_of": [], "domain": [COMPONENT], "range": []},
         {"kind": "property", "name": INPUT, "sub_class_of": [], "domain": [COMPONENT], "range": []},
@@ -57,6 +111,7 @@ ONTOLOGY = {
         {"kind": "property", "name": DIRECTION, "sub_class_of": [], "domain": [CORE + "Port"], "range": []},
         {"kind": "property", "name": FEEDS, "sub_class_of": [], "domain": [], "range": []},
     ],
+    "rules": RULES,
 }
 
 
@@ -113,6 +168,40 @@ def _assertions() -> list[dict]:
     return rows
 
 
+def _closure_assertions() -> list[dict]:
+    scope = "closure-demo"
+    s_out = _port(scope, "sensor", "out", "r")
+    h_in = _port(scope, "hub", "in", "r")
+    h_out = _port(scope, "hub", "out", "r")
+    k_in = _port(scope, "sink", "in", "r")
+    rows = [
+        assertion("sensor", TYPE, term(SPECIAL)),
+        assertion("sensor", OUTPUT, term(s_out)),
+        assertion(s_out, TYPE, term(OUTPUT_PORT)),
+        assertion(s_out, DIRECTION, lit("str", "out")),
+        assertion(s_out, PORT_TYPE, lit("str", "str")),
+        assertion("hub", TYPE, term(ATOMIC)),
+        assertion("hub", INPUT, term(h_in)),
+        assertion(h_in, TYPE, term(INPUT_PORT)),
+        assertion(h_in, DIRECTION, lit("str", "in")),
+        assertion(h_in, PORT_TYPE, lit("str", "str")),
+        assertion("hub", OUTPUT, term(h_out)),
+        assertion(h_out, TYPE, term(OUTPUT_PORT)),
+        assertion(h_out, DIRECTION, lit("str", "out")),
+        assertion(h_out, PORT_TYPE, lit("str", "str")),
+        assertion("sink", TYPE, term(ATOMIC)),
+        assertion("sink", INPUT, term(k_in)),
+        assertion(k_in, TYPE, term(INPUT_PORT)),
+        assertion(k_in, DIRECTION, lit("str", "in")),
+        assertion(k_in, PORT_TYPE, lit("str", "str")),
+        assertion("loner", TYPE, term(CORE + "CompositeComponent")),
+        assertion(s_out, FEEDS, term(h_in)),
+        assertion(h_out, FEEDS, term(k_in)),
+    ]
+    rows.sort(key=lambda row: json.dumps(row, sort_keys=True, separators=(",", ":")))
+    return rows
+
+
 FIXTURES = {
     "fixtures": {},
     "ontology": ONTOLOGY,
@@ -122,7 +211,13 @@ FIXTURES = {
             "scope": "demo",
             "sources": {},
             "assertions": _assertions(),
-        }
+        },
+        "closure-demo": {
+            "schema": "semantic-graph.v1",
+            "scope": "closure-demo",
+            "sources": {},
+            "assertions": _closure_assertions(),
+        },
     },
 }
 
@@ -174,6 +269,7 @@ _CASES = [
     ("ontology.validate-closed", {"op": "validate", "graph": "demo", "shape": _SHAPE_CLOSED}),
     ("ontology.validate-undeclared", {"op": "validate", "graph": "demo", "shape": _SHAPE_BAD}),
     ("ontology.hash", {"op": "hash", "graph": "demo"}),
+    ("ontology.closure-demo", {"op": "closure", "graph": "closure-demo"}),
 ]
 
 
@@ -225,14 +321,15 @@ def main() -> int:
     lock = {
         "schema": "cbp.vectors-lock.v1",
         "abi": "component-abi.v1",
-        "revision": 1,
+        "revision": 2,
         "contract_sha256": contract_sha,
         "note": (
-            "ontology.v1 suite (SPEC-0023 M1): a semantic graph is canonical and "
+            "ontology.v1 suite (SPEC-0023 M1+M2): a semantic graph is canonical and "
             "content-addressed; capability discovery is exact matching over a class "
             "and its declared subclasses; a closed shape is a deterministic gate; "
-            "an undeclared term and a scope escape fail closed "
-            "(undeclared-term / scope-escape)."
+            "an undeclared term and a scope escape fail closed; and the pinned "
+            "entailment closure (positive Datalog + stratified negation) is bounded, "
+            "canonical-sorted, and content-addressed (closure.v1)."
         ),
         "fixtures": {"path": "ontology-fixtures.v1.json", "sha256": fixtures_sha},
         "suite": {"path": "ontology-suite.v1.json", "sha256": suite_sha},

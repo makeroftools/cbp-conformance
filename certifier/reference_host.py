@@ -32,7 +32,12 @@ _ONT_HAS_CAPABILITY = "urn:cbp:core/hasCapability"
 _ONT_INPUT = "urn:cbp:core/input"
 _ONT_OUTPUT = "urn:cbp:core/output"
 _ONT_PORT_TYPE = "urn:cbp:core/portType"
+_ONT_KIND = "urn:cbp:core/kind"
+_ONT_SUB_CLASS_OF = "urn:cbp:core/subClassOf"
+_ONT_DOMAIN = "urn:cbp:core/domain"
+_ONT_RANGE = "urn:cbp:core/range"
 _ONT_TYPES = ("str", "int", "float", "bool", "dict", "list", "null", "any")
+_MAX_CLOSURE_ASSERTIONS = 100_000
 
 
 class _OntologyFailure(Exception):
@@ -1395,6 +1400,208 @@ class ReferenceHost:
             "violations": violations,
         }
 
+    # -- entailment closure (SPEC-0023, M2) ---------------------------------
+
+    @staticmethod
+    def _ont_value_json(value: Any) -> str:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+    def _ont_val_term(self, name: str) -> tuple[str, ...]:
+        return ("term", name)
+
+    def _ont_val_obj(self, obj: dict[str, Any]) -> tuple[str, ...]:
+        if obj.get("k") == "t":
+            return ("term", str(obj.get("n")))
+        return ("lit", str(obj.get("t")), self._ont_value_json(obj.get("v")))
+
+    def _ont_unify(
+        self, pattern: dict[str, Any], value: tuple[str, ...], bindings: dict[str, tuple[str, ...]]
+    ) -> bool:
+        if "var" in pattern:
+            name = str(pattern["var"])
+            if name == "_":
+                return True
+            if name not in bindings:
+                bindings[name] = value
+                return True
+            return bindings[name] == value
+        if "term" in pattern:
+            return value[0] == "term" and value[1] == str(pattern["term"])
+        lit = pattern["lit"]
+        return (
+            value[0] == "lit"
+            and value[1] == str(lit.get("t"))
+            and value[2] == self._ont_value_json(lit.get("v"))
+        )
+
+    def _ont_atom_matches(
+        self,
+        atom: dict[str, Any],
+        fact: dict[str, Any],
+        bindings: dict[str, tuple[str, ...]],
+    ) -> bool:
+        if atom.get("p") != fact.get("p"):
+            return False
+        if not self._ont_unify(atom["s"], self._ont_val_term(str(fact["s"])), bindings):
+            return False
+        return self._ont_unify(atom["o"], self._ont_val_obj(fact["o"]), bindings)
+
+    def _ont_negated_holds(
+        self,
+        atom: dict[str, Any],
+        facts: list[dict[str, Any]],
+        bindings: dict[str, tuple[str, ...]],
+    ) -> bool:
+        return any(
+            self._ont_atom_matches(atom, fact, dict(bindings)) for fact in facts
+        )
+
+    def _ont_rule_bindings(
+        self, rule: dict[str, Any], facts: list[dict[str, Any]]
+    ) -> list[dict[str, tuple[str, ...]]]:
+        body = rule.get("body", [])
+        positives = [a for a in body if not a.get("negated", False)]
+        negatives = [a for a in body if a.get("negated", False)]
+        results: list[dict[str, tuple[str, ...]]] = []
+
+        def recurse(index: int, bindings: dict[str, tuple[str, ...]]) -> None:
+            if index == len(positives):
+                for atom in negatives:
+                    if self._ont_negated_holds(atom, facts, bindings):
+                        return
+                results.append(dict(bindings))
+                return
+            atom = positives[index]
+            for fact in facts:
+                extended = dict(bindings)
+                if self._ont_atom_matches(atom, fact, extended):
+                    recurse(index + 1, extended)
+
+        recurse(0, {})
+        return results
+
+    def _ont_derive(
+        self, head: dict[str, Any], bindings: dict[str, tuple[str, ...]]
+    ) -> dict[str, Any]:
+        subject_pattern = head["s"]
+        if "term" in subject_pattern:
+            subject = str(subject_pattern["term"])
+        elif "var" in subject_pattern:
+            value = bindings.get(str(subject_pattern["var"]))
+            if value is None or value[0] != "term":
+                raise _OntologyFailure("malformed-document")
+            subject = value[1]
+        else:
+            raise _OntologyFailure("malformed-document")
+        obj_pattern = head["o"]
+        if "term" in obj_pattern:
+            obj = {"k": "t", "n": str(obj_pattern["term"])}
+        elif "lit" in obj_pattern:
+            obj = {
+                "k": "l",
+                "t": str(obj_pattern["lit"]["t"]),
+                "v": obj_pattern["lit"].get("v"),
+            }
+        elif "var" in obj_pattern:
+            value = bindings.get(str(obj_pattern["var"]))
+            if value is None:
+                raise _OntologyFailure("malformed-document")
+            if value[0] == "term":
+                obj = {"k": "t", "n": value[1]}
+            else:
+                obj = {"k": "l", "t": value[1], "v": json.loads(value[2])}
+        else:
+            raise _OntologyFailure("malformed-document")
+        return {"s": subject, "p": str(head["p"]), "o": obj}
+
+    def _ont_stratify(
+        self, rules: list[dict[str, Any]], predicates: set[str]
+    ) -> dict[str, int]:
+        keys = sorted(predicates)
+        stratum = dict.fromkeys(keys, 0)
+        for _ in range(len(keys) + 1):
+            changed = False
+            for rule in rules:
+                required = 0
+                for atom in rule.get("body", []):
+                    required = max(
+                        required,
+                        stratum.get(str(atom["p"]), 0)
+                        + (1 if atom.get("negated", False) else 0),
+                    )
+                head_predicate = str(rule["head"]["p"])
+                if stratum.get(head_predicate, 0) < required:
+                    stratum[head_predicate] = required
+                    changed = True
+            if not changed:
+                return stratum
+        raise _OntologyFailure("malformed-document")
+
+    def _ont_closure(
+        self, ontology: dict[str, Any], graph: dict[str, Any]
+    ) -> dict[str, Any]:
+        profile = f"{ontology['id']}@{ontology['version']}"
+        facts: dict[bytes, dict[str, Any]] = {}
+
+        def add(subject: str, predicate: str, obj: dict[str, Any]) -> None:
+            fact = {"s": subject, "p": predicate, "o": obj}
+            facts.setdefault(canonical_json(fact), fact)
+
+        for assertion in graph["assertions"]:
+            add(str(assertion["s"]), str(assertion["p"]), assertion["o"])
+        for term in ontology.get("terms", []):
+            add(str(term["name"]), _ONT_KIND, {"k": "l", "t": "str", "v": term["kind"]})
+            if term.get("kind") == "class":
+                for parent in term.get("sub_class_of", []):
+                    add(str(term["name"]), _ONT_SUB_CLASS_OF, {"k": "t", "n": str(parent)})
+            else:
+                for domain in term.get("domain", []):
+                    add(str(term["name"]), _ONT_DOMAIN, {"k": "t", "n": str(domain)})
+                for range_name in term.get("range", []):
+                    add(str(term["name"]), _ONT_RANGE, {"k": "t", "n": str(range_name)})
+        rules = ontology.get("rules", [])
+        predicates = {str(fact["p"]) for fact in facts.values()}
+        for rule in rules:
+            predicates.add(str(rule["head"]["p"]))
+            for atom in rule.get("body", []):
+                predicates.add(str(atom["p"]))
+        stratum = self._ont_stratify(rules, predicates)
+        max_stratum = max(stratum.values(), default=0)
+        for level in range(max_stratum + 1):
+            level_rules = [
+                rule for rule in rules if stratum.get(str(rule["head"]["p"]), 0) == level
+            ]
+            while True:
+                snapshot = [facts[key] for key in sorted(facts)]
+                added = False
+                for rule in level_rules:
+                    for bindings in self._ont_rule_bindings(rule, snapshot):
+                        fact = self._ont_derive(rule["head"], bindings)
+                        key = canonical_json(fact)
+                        if key not in facts:
+                            facts[key] = fact
+                            added = True
+                if not added:
+                    break
+                if len(facts) > _MAX_CLOSURE_ASSERTIONS:
+                    raise _OntologyFailure("closure-overflow")
+        assertions = [facts[key] for key in sorted(facts)]
+        document = {
+            "schema": "closure.v1",
+            "profile": profile,
+            "graph_hash": hashlib.sha256(canonical_json(graph)).hexdigest(),
+            "ontology_hash": hashlib.sha256(canonical_json(ontology)).hexdigest(),
+            "assertions": assertions,
+        }
+        return {
+            "op": "closure",
+            "profile": profile,
+            "graph_sha256": document["graph_hash"],
+            "ontology_sha256": document["ontology_hash"],
+            "assertion_count": len(assertions),
+            "closure_sha256": hashlib.sha256(canonical_json(document)).hexdigest(),
+        }
+
     def _run_ontology_case(self, case: dict[str, Any]) -> dict[str, Any]:
         ontology = self._ontology
         if not isinstance(ontology, dict):
@@ -1424,6 +1631,8 @@ class ReferenceHost:
                         ).hexdigest(),
                     }
                 )
+            if op == "closure":
+                return self._ontology_success(self._ont_closure(ontology, graph))
         except _OntologyFailure as exc:
             return self._ontology_error(exc.kind)
         return self._ontology_error("malformed-document")

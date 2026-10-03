@@ -50,6 +50,12 @@ with zero capabilities (A0), and records a scoped Assurance Label.
 both the Python reference host and the Rust host. `certifier/reference_host.py`
 carries a pure-stdlib RFC 8032 verifier (test double).
 
+**Ontology M2 (`closure.v1`; SPEC-0023).** The `ontology` category now also
+certifies the pinned **entailment closure** (positive Datalog + stratified
+negation, bounded, canonical-sorted) via `op: closure` on a
+`closure-demo` fixture — the reference host and the Rust host pass **11/11**
+cross-runtime. The M1 category is unchanged.
+
 **UI ABI authored (`ui.v1`; SPEC-0022).** `contracts/ui-v1.wit` freezes a
 target-agnostic **UI world** (`cbp:ui@1.0.0`): a UI component exports
 `describe`/`render`/`handle` and imports a host-mediated projection/directive
