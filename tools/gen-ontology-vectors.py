@@ -114,6 +114,9 @@ ONTOLOGY = {
     "rules": RULES,
 }
 
+# Canonical form: terms are sorted by name (matches core Ontology.to_dict).
+ONTOLOGY["terms"].sort(key=lambda term: term["name"])
+
 
 def term(name: str) -> dict:
     return {"k": "t", "n": name}
