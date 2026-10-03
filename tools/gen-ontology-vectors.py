@@ -273,6 +273,7 @@ _CASES = [
     ("ontology.validate-undeclared", {"op": "validate", "graph": "demo", "shape": _SHAPE_BAD}),
     ("ontology.hash", {"op": "hash", "graph": "demo"}),
     ("ontology.closure-demo", {"op": "closure", "graph": "closure-demo"}),
+    ("ontology.export-demo", {"op": "export", "graph": "demo"}),
 ]
 
 

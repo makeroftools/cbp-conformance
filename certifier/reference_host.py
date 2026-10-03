@@ -38,6 +38,8 @@ _ONT_DOMAIN = "urn:cbp:core/domain"
 _ONT_RANGE = "urn:cbp:core/range"
 _ONT_TYPES = ("str", "int", "float", "bool", "dict", "list", "null", "any")
 _MAX_CLOSURE_ASSERTIONS = 100_000
+_ONT_XSD = "http://www.w3.org/2001/XMLSchema#"
+_ONT_JSON = "urn:cbp:json"
 
 
 class _OntologyFailure(Exception):
@@ -1602,6 +1604,43 @@ class ReferenceHost:
             "closure_sha256": hashlib.sha256(canonical_json(document)).hexdigest(),
         }
 
+    def _ont_export(self, graph: dict[str, Any]) -> dict[str, Any]:
+        def object_token(obj: dict[str, Any]) -> str:
+            if obj.get("k") == "t":
+                return "<" + str(obj["n"]) + ">"
+            datatype = str(obj.get("t"))
+            value = obj.get("v")
+            if datatype == "str":
+                token = json.dumps(str(value), ensure_ascii=True)
+                return f"{token}^^<{_ONT_XSD}string>"
+            if datatype == "int":
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise _OntologyFailure("malformed-document")
+                return f'{json.dumps(str(value), ensure_ascii=True)}^^<{_ONT_XSD}integer>'
+            if datatype == "bool":
+                if not isinstance(value, bool):
+                    raise _OntologyFailure("malformed-document")
+                literal = "true" if value else "false"
+                return f'{json.dumps(literal, ensure_ascii=True)}^^<{_ONT_XSD}boolean>'
+            if datatype == "float":
+                raise _OntologyFailure("malformed-document")
+            canonical = json.dumps(
+                value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+            )
+            return f'{json.dumps(canonical, ensure_ascii=True)}^^<{_ONT_JSON}>'
+
+        triples: list[str] = []
+        for assertion in sorted(graph["assertions"], key=canonical_json):
+            triples.append(
+                f'<{assertion["s"]}> <{assertion["p"]}> {object_token(assertion["o"])} .'
+            )
+        text = "".join(line + "\n" for line in triples)
+        return {
+            "op": "export",
+            "ntriples_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "triple_count": len(triples),
+        }
+
     def _run_ontology_case(self, case: dict[str, Any]) -> dict[str, Any]:
         ontology = self._ontology
         if not isinstance(ontology, dict):
@@ -1633,6 +1672,8 @@ class ReferenceHost:
                 )
             if op == "closure":
                 return self._ontology_success(self._ont_closure(ontology, graph))
+            if op == "export":
+                return self._ontology_success(self._ont_export(graph))
         except _OntologyFailure as exc:
             return self._ontology_error(exc.kind)
         return self._ontology_error("malformed-document")
