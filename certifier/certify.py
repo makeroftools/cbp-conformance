@@ -170,6 +170,11 @@ def compare(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
                     f"appointment mismatch: {actual.get('appointment')!r} "
                     f"!= {expected.get('appointment')!r}"
                 )
+            if "ontology" in expected and actual.get("ontology") != expected.get("ontology"):
+                problems.append(
+                    f"ontology mismatch: {actual.get('ontology')!r} "
+                    f"!= {expected.get('ontology')!r}"
+                )
     elif not actual_error or actual_error.get("kind") != expected_error.get("kind"):
         problems.append(f"expected error kind {expected_error.get('kind')!r}, got {actual_error!r}")
     if "lifecycle" in expected and actual.get("lifecycle") != expected.get("lifecycle"):

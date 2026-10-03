@@ -18,6 +18,9 @@ single language or runtime is forbidden here.
 | [`ui-fixtures.v1.json`](ui-fixtures.v1.json) | The **UI fixtures**: target-agnostic `ui.v1` component manifests (targets, projections, directives, capabilities, slots, tokens) and their reference view. |
 | [`ui-suite.v1.json`](ui-suite.v1.json) | The **ui cases**: describe/render/handle + the deny paths + a deterministic content address (SPEC-0022). |
 | [`ui.lock.v1.json`](ui.lock.v1.json) | The content address of the ui suite/fixtures and the `ui.v1` contract documents. |
+| [`ontology-fixtures.v1.json`](ontology-fixtures.v1.json) | The **ontology fixtures**: an `ontology.v1` TBox fragment and canonical `semantic-graph.v1` documents. |
+| [`ontology-suite.v1.json`](ontology-suite.v1.json) | The **ontology cases**: canonical graph hash + capability discovery + closed-shape validation, plus the fail-closed error kinds (SPEC-0023 M1). |
+| [`ontology.lock.v1.json`](ontology.lock.v1.json) | The content address of the ontology suite/fixtures. |
 
 ## Categories (SPEC-0013)
 
@@ -52,6 +55,11 @@ single language or runtime is forbidden here.
   version, an undeclared projection, and an undeclared directive fail closed
   (`abi-mismatch` / `projection-denied` / `directive-denied`; see
   `contracts/UI-ABI.md`).
+- **ontology** — a `semantic-graph.v1` document is canonical and
+  content-addressed; capability discovery is exact matching over a class and its
+  declared subclasses plus port-type compatibility; a `shapes.v1` closed shape
+  is a deterministic gate; an undeclared term and a query outside its scope fail
+  closed (`undeclared-term` / `scope-escape`). SPEC-0023 M1.
 
 ## Canonical form (content addressing)
 
@@ -108,6 +116,7 @@ endpoints are runtime-specific and must not affect conformance, and only
 - `network_sha256` and `trajectory` are compared when present in the expected
   observation (network cases).
 - `ui` is compared when present in the expected observation (ui cases).
+- `ontology` is compared when present in the expected observation (ontology cases).
 
 Fixtures must be deterministic and runtime-neutral. Certification is defined in
 [`../certifier/`](../certifier/).

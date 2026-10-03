@@ -26,6 +26,22 @@ from typing import Any
 PROTOCOL = "cbp.conformance-host.v1"
 ABI = "component-abi.v1"
 
+# Ontology / semantic-graph (SPEC-0023 M1) constants.
+_ONT_TYPE = "urn:cbp:core/type"
+_ONT_HAS_CAPABILITY = "urn:cbp:core/hasCapability"
+_ONT_INPUT = "urn:cbp:core/input"
+_ONT_OUTPUT = "urn:cbp:core/output"
+_ONT_PORT_TYPE = "urn:cbp:core/portType"
+_ONT_TYPES = ("str", "int", "float", "bool", "dict", "list", "null", "any")
+
+
+class _OntologyFailure(Exception):
+    """An ontology case failed closed with a fixed error kind."""
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+        super().__init__(kind)
+
 UI_ABI_VERSION = "1.0.0"
 UI_TARGETS = ("web", "cli", "os", "embedded")
 UI_ASSURANCES = ("verified", "model", "unverified", "refused")
@@ -438,6 +454,8 @@ class ReferenceHost:
         self._fixtures = fixtures["fixtures"]
         self._networks = fixtures.get("networks", {})
         self._planners = fixtures.get("planners", {})
+        self._ontology = fixtures.get("ontology")
+        self._ont_graphs = fixtures.get("graphs", {})
         sources = (trust or {}).get("sources", {})
         self._sources = (
             {
@@ -466,6 +484,8 @@ class ReferenceHost:
             return self._run_appointed_case(case)
         if case.get("category") == "ui":
             return self._run_ui_case(case)
+        if case.get("category") == "ontology":
+            return self._run_ontology_case(case)
         fixture = self._fixtures.get(case["fixture"])
         if fixture is None:
             return self._result(
@@ -1152,6 +1172,261 @@ class ReferenceHost:
             "slots": slots,
             "tokens": dict(tokens),
         }
+
+
+    # -- ontology (SPEC-0023, M1) -------------------------------------------
+
+    def _ontology_error(self, kind: str) -> dict[str, Any]:
+        return {"error": {"kind": kind}}
+
+    def _ontology_success(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"error": None, "ontology": payload}
+
+    def _ontology_term(self, ontology: dict[str, Any], name: str) -> dict[str, Any]:
+        for term in ontology.get("terms", []):
+            if term.get("name") == name:
+                return term
+        raise _OntologyFailure("undeclared-term")
+
+    def _ontology_subclasses(self, ontology: dict[str, Any], name: str) -> list[str]:
+        term = self._ontology_term(ontology, name)
+        if term.get("kind") != "class":
+            raise _OntologyFailure("undeclared-term")
+        out: set[str] = set()
+        stack = [name]
+        while stack:
+            current = stack.pop()
+            if current in out:
+                continue
+            out.add(current)
+            for candidate in ontology.get("terms", []):
+                if (
+                    candidate.get("kind") == "class"
+                    and current in candidate.get("sub_class_of", [])
+                ):
+                    stack.append(candidate["name"])
+        return sorted(out)
+
+    def _ontology_objects(
+        self, graph: dict[str, Any], subject: str, predicate: str
+    ) -> list[dict[str, Any]]:
+        return [
+            assertion["o"]
+            for assertion in graph["assertions"]
+            if assertion["s"] == subject and assertion["p"] == predicate
+        ]
+
+    def _ontology_components(
+        self, graph: dict[str, Any], ontology: dict[str, Any], target: str
+    ) -> list[str]:
+        classes = set(self._ontology_subclasses(ontology, target))
+        found = {
+            assertion["s"]
+            for assertion in graph["assertions"]
+            if assertion["p"] == _ONT_TYPE
+            and assertion["o"].get("k") == "t"
+            and assertion["o"]["n"] in classes
+        }
+        return sorted(found)
+
+    def _ontology_ports(
+        self, graph: dict[str, Any], component: str, predicate: str
+    ) -> list[str]:
+        return [
+            obj["n"]
+            for obj in self._ontology_objects(graph, component, predicate)
+            if obj.get("k") == "t"
+        ]
+
+    def _ontology_port_types(self, graph: dict[str, Any], port: str) -> list[str]:
+        return [
+            str(obj["v"])
+            for obj in self._ontology_objects(graph, port, _ONT_PORT_TYPE)
+            if obj.get("k") == "l"
+        ]
+
+    def _ontology_compatible(self, source: str, target: str) -> bool:
+        if source not in _ONT_TYPES or target not in _ONT_TYPES:
+            return False
+        return source == target or source == "any" or target == "any"
+
+    def _ontology_accepts(
+        self, graph: dict[str, Any], component: str, wanted: list[str]
+    ) -> bool:
+        ports = self._ontology_ports(graph, component, _ONT_INPUT)
+        for type_name in wanted:
+            if not any(
+                self._ontology_compatible(type_name, declared)
+                for port in ports
+                for declared in self._ontology_port_types(graph, port)
+            ):
+                return False
+        return True
+
+    def _ontology_produces(
+        self, graph: dict[str, Any], component: str, wanted: list[str]
+    ) -> bool:
+        ports = self._ontology_ports(graph, component, _ONT_OUTPUT)
+        for type_name in wanted:
+            if not any(
+                self._ontology_compatible(declared, type_name)
+                for port in ports
+                for declared in self._ontology_port_types(graph, port)
+            ):
+                return False
+        return True
+
+    def _ontology_query(
+        self, ontology: dict[str, Any], graph: dict[str, Any], query: dict[str, Any]
+    ) -> dict[str, Any]:
+        if query.get("scope") != graph.get("scope"):
+            raise _OntologyFailure("scope-escape")
+        candidates = self._ontology_components(
+            graph, ontology, str(query["target_class"])
+        )
+        required = set(query.get("requires_capabilities", []))
+        result: list[str] = []
+        for component in candidates:
+            capabilities = {
+                str(obj["v"])
+                for obj in self._ontology_objects(
+                    graph, component, _ONT_HAS_CAPABILITY
+                )
+                if obj.get("k") == "l"
+            }
+            if not required <= capabilities:
+                continue
+            if not self._ontology_accepts(
+                graph, component, list(query.get("input_types", []))
+            ):
+                continue
+            if not self._ontology_produces(
+                graph, component, list(query.get("output_types", []))
+            ):
+                continue
+            result.append(component)
+        return {
+            "op": "query",
+            "scope": graph["scope"],
+            "target_class": query["target_class"],
+            "components": result,
+        }
+
+    def _ontology_validate(
+        self, ontology: dict[str, Any], graph: dict[str, Any], shape: dict[str, Any]
+    ) -> dict[str, Any]:
+        subjects = self._ontology_components(graph, ontology, str(shape["target"]))
+        requirements = sorted(shape.get("requirements", []), key=lambda r: r["relation"])
+        for requirement in requirements:
+            term = self._ontology_term(ontology, str(requirement["relation"]))
+            if term.get("kind") != "property":
+                raise _OntologyFailure("undeclared-term")
+        declared = {str(r["relation"]) for r in requirements}
+        violations: list[dict[str, Any]] = []
+        for subject in subjects:
+            for requirement in requirements:
+                relation = str(requirement["relation"])
+                objects = self._ontology_objects(graph, subject, relation)
+                minimum = int(requirement.get("min_count", 1))
+                maximum = requirement.get("max_count")
+                if len(objects) < minimum:
+                    violations.append(
+                        {
+                            "component": subject,
+                            "relation": relation,
+                            "detail": "too-few",
+                            "count": len(objects),
+                            "expected": minimum,
+                        }
+                    )
+                if maximum is not None and len(objects) > int(maximum):
+                    violations.append(
+                        {
+                            "component": subject,
+                            "relation": relation,
+                            "detail": "too-many",
+                            "count": len(objects),
+                            "expected": int(maximum),
+                        }
+                    )
+                datatype = requirement.get("datatype")
+                allowed = set(requirement.get("allowed", []))
+                for obj in objects:
+                    if datatype is not None and not (
+                        obj.get("k") == "l" and obj.get("t") == datatype
+                    ):
+                        violations.append(
+                            {
+                                "component": subject,
+                                "relation": relation,
+                                "detail": "datatype",
+                                "expected": datatype,
+                            }
+                        )
+                    value = str(obj["v"]) if obj.get("k") == "l" else str(obj["n"])
+                    if allowed and value not in allowed:
+                        violations.append(
+                            {
+                                "component": subject,
+                                "relation": relation,
+                                "detail": "allowed",
+                                "value": value,
+                            }
+                        )
+            if shape.get("closed"):
+                used = {
+                    assertion["p"]
+                    for assertion in graph["assertions"]
+                    if assertion["s"] == subject
+                }
+                for relation in sorted(used - declared - {_ONT_TYPE}):
+                    violations.append(
+                        {
+                            "component": subject,
+                            "relation": relation,
+                            "detail": "closed",
+                        }
+                    )
+        violations.sort(key=lambda v: json.dumps(v, sort_keys=True, separators=(",", ":")))
+        return {
+            "op": "validate",
+            "shape_id": shape["id"],
+            "ok": not violations,
+            "violations": violations,
+        }
+
+    def _run_ontology_case(self, case: dict[str, Any]) -> dict[str, Any]:
+        ontology = self._ontology
+        if not isinstance(ontology, dict):
+            return self._ontology_error("malformed-document")
+        scenario = case.get("scenario", {})
+        if not isinstance(scenario, dict):
+            return self._ontology_error("malformed-document")
+        graph = self._ont_graphs.get(scenario.get("graph"))
+        if not isinstance(graph, dict):
+            return self._ontology_error("malformed-document")
+        op = scenario.get("op")
+        try:
+            if op == "query":
+                return self._ontology_success(
+                    self._ontology_query(ontology, graph, scenario["query"])
+                )
+            if op == "validate":
+                return self._ontology_success(
+                    self._ontology_validate(ontology, graph, scenario["shape"])
+                )
+            if op == "hash":
+                return self._ontology_success(
+                    {
+                        "op": "hash",
+                        "graph_sha256": hashlib.sha256(
+                            canonical_json(graph)
+                        ).hexdigest(),
+                    }
+                )
+        except _OntologyFailure as exc:
+            return self._ontology_error(exc.kind)
+        return self._ontology_error("malformed-document")
 
     def _run_ui_case(self, case: dict[str, Any]) -> dict[str, Any]:
         fixture_id = case.get("fixture", "")
