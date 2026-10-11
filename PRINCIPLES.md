@@ -4,10 +4,10 @@ These are the non-negotiable rules governing every decision in this repository.
 They override all other considerations. When a choice trades any of these for
 speed, convenience, or feature completeness, that choice is forbidden.
 
-**Operating levels.** The active level ("mode") is declared in
-[`.agentfactory.toml`](../core/.agentfactory.toml) and explained in
-[`docs/agent/levels.md`](../core/docs/agent/levels.md). The level changes which
-gates and which human review apply; it never suspends any law below.
+**Operating levels.** The active level ("mode") is declared in the project's
+agent-factory config (`.agentfactory.toml`) and explained in its levels documentation.
+The level changes which gates and which human review apply; it never suspends any
+law below.
 
 ## 1. Correctness First
 
@@ -65,7 +65,7 @@ fetching versioned components from the self-hosted registry — happens only at
 **acquisition time**, is **pinned** (immutable commit + content hash),
 **signed and verified** (fail-closed), and **offline-capable** (served from a
 local mirror or cache). Acquisition never weakens the run-time guarantee. See
-[`specs/SPEC-0007-harness-shell-component-distribution.md`](../core/specs/SPEC-0007-harness-shell-component-distribution.md).
+SPEC-0007 (harness/shell component distribution).
 
 ## 6. Full Auditability
 
@@ -159,8 +159,6 @@ itself.
    command and output.
 4. Keep the suite green; fix any regression the agent caused before handoff.
 
-See `docs/agent/testing.md` and `docs/agent/levels.md`.
-
 ## 13. COMMIT AND PUSH CONTINUOUSLY — NO PERMISSION NEEDED
 
 > **Commit often; push often; no permission is required.** Version control is a
@@ -177,5 +175,3 @@ See `docs/agent/testing.md` and `docs/agent/levels.md`.
 4. Pre-commit hooks and CI are the guardrails. **Never bypass them** with
    `--no-verify`; if a hook fails, fix the cause and commit again.
 5. A commit message states what and why; report the checks run.
-
-See `docs/agent/committing.md`.

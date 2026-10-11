@@ -1,14 +1,13 @@
 # conformance — the shared CBP contract
 
-Public. This repository is the **single shared contract** that proves the Python
-reflection (`../core`), the Rust host (`../pro`), and WASM execution are
-equivalent (SPEC-0013). It holds the frozen WIT/ABI, the conformance vectors, the
-certifier, and the content-addressed WASM fixtures. Nothing here encodes an
-implementation detail of any one language or runtime.
+Public. This repository is the **single shared contract**: it holds the frozen
+WIT/ABI, the conformance vectors, the certifier, and the content-addressed WASM
+fixtures, and it is how any runtime is certified equivalent (SPEC-0013). Nothing
+here encodes an implementation detail of any one language or runtime.
 
 See [`AGENTS.md`](AGENTS.md) for the hard laws and invariants; the architecture is
-frozen in `../core/specs/SPEC-0012` (component ABI) and
-`../core/specs/SPEC-0013` (cross-runtime realization and conformance vectors).
+frozen in SPEC-0012 (component ABI) and SPEC-0013 (cross-runtime realization and
+conformance vectors).
 
 ## Layout
 
@@ -63,7 +62,7 @@ python3 certifier/certify.py --suite vectors/ui-suite.v1.json \
   --contract-lock contracts/ABI.lock.v1.json
 
 # all five suites against the Rust host (builds it first)
-../pro/scripts/certify.sh
+# (a host runs its own certify script)
 ```
 
 Exit codes: `0` certified · `1` a case failed or was nondeterministic ·

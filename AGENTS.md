@@ -1,8 +1,7 @@
 # AGENTS.md — conformance
 
 Public. The shared CBP contract: WIT interfaces + conformance vectors + certifier.
-See `README.md`; the architecture is frozen in `../core/specs/SPEC-0012` and
-`../core/specs/SPEC-0013`.
+See `README.md`; the architecture is frozen in SPEC-0012 and SPEC-0013.
 
 ## Hard laws
 
@@ -31,7 +30,7 @@ execution suite (**10/10**, run against `artifacts/{identity,abi-identity}.wasm`
 by the Rust host — a full `component-abi.v1` guest, plus detached **Ed25519**
 artifact-signing accept/refuse). The trust root is host configuration carried in
 `wasm.lock.v1.json`, never fixture data. Certify with `certifier/certify.py`;
-`../pro/scripts/certify.sh` runs all three suites.
+the private Rust edition's `scripts/certify.sh` runs the suites.
 
 **Layer 2 delivered (`network.v1` revision 2).** `contracts/network-v1.md` freezes
 `network.v1`: a component network pinned (content-addressed) before it runs,
@@ -72,6 +71,5 @@ projection, `handle` emits a content-addressed intent, and
 
 **Next:** the shared contract is frozen and certified. The signing/distribution
 spine (key rotation; the `design/network → pin → components.lock` producer; the
-umbrella `components.lock`) is delivered in `../core`; remaining work is
-operator-gated (the L3 flip; SPEC-0018 Phases 3–6) — see
-[`../core/HANDOFF.md`](../core/HANDOFF.md).
+umbrella `components.lock`) is delivered in the original Python edition; remaining
+work is operator-gated (the L3 flip; SPEC-0018 Phases 3–6).
